@@ -4,3 +4,11 @@
 ** はじめに
 
    [[https://github.com/spinute/ods][Open Data Structures 日本語訳プロジェクト]] のビルド用Docker環境です。
+
+   以下によりビルドできます。
+
+#+begin_src shell
+  docker-compose run odsbuild bash
+  cd /data/ods/ja
+  make
+#+end_src

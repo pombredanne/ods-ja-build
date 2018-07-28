@@ -1,0 +1,410 @@
+\chapter{整数を扱うデータ構造}
+
+この章では再び#SSet#の実装を扱う。
+ただし、#w#ビットの整数の集まりを表すことに特化した#SSet#を紹介する。
+すなわち、$#x#\in\{0,\ldots,2^{#w#}-1\}$と仮定して、#add(x)#、#remove(x)#、#find(x)#を実装する。
+整数のデータや整数のキーを扱う状況が多いことは想像に難くないだろう。
+
+この章で説明するデータ構造は3つある。
+1つめは#BinaryTrie#というデータ構造で、#SSet#の3つの操作をいずれも$O(#w#)$の時間で実行できる。
+この実行時間は、それほど驚くようなものでもないだろう。
+$\{0,\ldots,2^{#w#}-1\}$の部分集合の大きさ#n#は$#n#\le 2^{#w#}$であり、$\log #n# \le #w#$が成り立つからだ。
+この本でこれまでに解説した#SSet#の実装では、各操作の実行時間は$O(\log #n#)$であった。
+すなわち、いずれも#BinaryTrie#と同じくらいは高速であったということである。
+
+2つめは#XFastTrie#というデータ構造で、#BinaryTrie#の検索をハッシュ法を使って高速化したものである。
+この高速化により、#find(x)#の実行時間が$O(\log #w#)$になる。
+しかし、#XFastTrie#における#add(x)#および#remove(x)#の実行時間は依然として$O(#w#)$であり、空間使用量は$O(#n#\cdot#w#)$である。
+
+3つめは#YFastTrie#というデータ構造だ。このデータ構造では、およそ$#w#$個ごとに、1つの要素だけを#XFastTrie#に格納し、それ以外の要素を通常の#SSet#に格納する。
+この工夫により、#add(x)#および#remove(x)#の実行時間は$O(\log #w#)$になり、空間使用量は$O(#n#)$に抑えられる。
+
+この章の実装には、整数と対応付けが可能な任意の型のデータを格納できる。
+サンプルコードでは、#x#に対応する整数を#ix#で表し、#x#を#ix#に変換する関数を#intValue(x)#とする。
+また、簡単のため、文中では#x#を整数として扱う。
+
+\section{#BinaryTrie#：二分トライ木} % TODO: YJ 日本語の「デジタル」は二進数、離散変数という意味はある？ / trieについて訳注があったほうがいいと思います。訳語はトライ木で -kshikano
+\seclabel{binarytrie}
+
+\ejindex{BinaryTrie@#BinaryTrie#}{にぶんとらいき@二分トライ木}%
+#BinaryTrie#\footnote{訳注：Trieはトライと読む。本来はRe"trie"valに由来する造語で、ツリーに近い発音だったようだが、treeと区別するためにトライと発音するようである。}は、#w#ビット整数の集合を二分木で符号化したものである。% YJ encode=符号化、翻訳、エンコード
+#BinaryTrie#の葉の深さはいずれも#w#であり、根から葉への経路が、ある整数を表す。
+整数#x#を表す経路では、深さ#i#において、整数#x#の上から#i#番めのビットが0なら左に向かい、1なら右に向かう。
+\figref{binarytrie-ex}に、$#w#=4$の場合の例を示す。この例では、整数3（0011）、9（1001）、12（1100）、13（1101）が二分トライ木に格納されている。% YJ trie=トライ
+\begin{figure}
+  \begin{center}
+    \includegraphics[width=\ScaleIfNeeded]{figs/binarytrie-ex-1}
+  \end{center}
+  \caption{二分トライ木では、整数を根から葉への経路として符号化する}
+  \figlabel{binarytrie-ex}
+\end{figure}
+
+二分トライ木に格納されている#x#を探し出すときの探索経路は、#x#の二進表記で決まる。
+そこで、ノード#u#の子を指すポインタ#u.child[0]#および#u.child[1]#に、それぞれ#left#および#right#という名前を付けておくと便利である。
+葉には子がないので、葉ではこのポインタを別の用途に使う。具体的には、このポインタを使って、葉の双方向連結リストを作る。
+すなわち、二分トライ木の葉では#u.child[0]#がリストにおける#u#の直前のノード（#prev#）を指し、#u.child[1]#はリストにおける#u#の直後のノード（#next#）を指す。
+さらに、特別なノード#dummy#により、先頭のノードの前のノード、および、末尾のノードの後のノードを指すことにする
+（\secref{dllist}を参照）。
+\cpponly{サンプルコードでは、#u.child[0]#、#u.left#、#u.prev#がいずれもノード#u#の同じフィールドを参照している。#u.child[1]#、#u.right#、#u.next#も同様である。}
+
+各ノード#u#には、さらに#u.jump#というポインタも持たせる。
+#u.jump#は、#u#が左の子を持たないときは、#u#を根とする部分木における最小の葉を指す。
+#u#が右の子を持たないときは、#u#を根とする部分木における最大の葉を指す。
+#BinaryTrie#の#jump#ポインタと、葉の双方向連結リストの例を、\figref{binarytrie-ex2}に示す。
+
+\begin{figure}
+  \begin{center}
+    \includegraphics[width=\ScaleIfNeeded]{figs/binarytrie-ex-2}
+  \end{center}
+  \caption{二分トライ木における#jump#ポインタを破線の矢印で、リストのリンクを実線の矢印で表す}
+  \figlabel{binarytrie-ex2}
+\end{figure}
+
+% XXX: コメントアウトしてあるのはなぜか？
+%\jxavaimport{ods/BinaryTrie.Node<Node}
+%\cxppimport{ods/BinaryTrie.BinaryTrieNode<Node}
+
+#BinaryTrie#における#find(x)#では、単純に#x#の探索経路を辿ればよい。
+葉に辿り着ければ、#x#が存在するとわかる。
+進みたい方向に子がなく、それ以上進めないノード#u#に辿り着いたときは、#u.jump#を辿る。
+そうすると、#x#より大きい最小の葉、または、#x#より小さい最大の葉が見つかる。
+どちらになるかは、#u#の左右どちらに子がいないかに応じて決まる。
+#u#が左の子を持たないなら、欲しいノードを見つけたことになる% YJ 訳注でfind(x)がx以下の最もxに近い要素を返す関数であることを再確認する？
+%% spinute: 訳注を入れました
+\footnote{訳注：第1章で定義したように、#SSet#の#find(x)#は、#x#以上の最小の要素を見つける操作である。}。
+#u#が右の子を持たないなら、連結リストを辿ることで欲しいノードが見つかる。
+\figref{binarytrie-find}に、この2つの場合を示す。
+\codeimport{ods/BinaryTrie.find(x)}
+\begin{figure}
+  \begin{center}
+    \includegraphics[width=\ScaleIfNeeded]{figs/binarytrie-ex-3}
+  \end{center}
+  \caption{#find(5)#および#find(8)#が辿る経路}
+  \figlabel{binarytrie-find}
+\end{figure}
+#find(x)#の実行時間において支配的なのは、根から葉への経路を辿る処理であり、これにかかる時間は$O(#w#)$である。
+
+#BinaryTrie#における#add(x)#も単純だが、手順はかなり多い。
+\begin{enumerate}
+  \item #x#の探索経路を辿り、それ以上進めないノード#u#を見つける
+  \item #u#から#x#を含む葉への、探索経路に足りない部分を作る
+  \item #x#を含むノード#u'#を葉の連結リストに追加する
+  （#u#の#jump#ポインタを使うことで、連結リストにおける#u'#の直前のノード#pred#が得られる）
+  \item これまで辿ってきた経路を戻りながら、#x#を指すべき#jump#ポインタを更新する
+\end{enumerate}
+\figref{binarytrie-add}に要素を追加する様子を示す。
+\begin{figure}
+  \begin{center}
+    \includegraphics[width=\ScaleIfNeeded]{figs/binarytrie-add}
+  \end{center}
+  \caption{\figref{binarytrie-ex2}の#BinaryTrie#に、値2、値15を追加する}
+  \figlabel{binarytrie-add}
+\end{figure}
+\codeimport{ods/BinaryTrie.add(x)}
+このメソッドは、まず#x#の探索経路を辿り、それから根の方向に向かって戻る。
+各ステップは定数時間で実行できるので、#add(x)#の実行時間は$O(#w#)$である。
+
+#remove(x)#は、#add(x)#の処理を取り消す。
+#add(x)#と同様に手順は多い。
+\begin{enumerate}
+  \item #x#の探索経路を辿り、#x#を含む葉#u#を見つける
+  \item #u#を双方向連結リストから削除する
+  \item #u#を削除し、#x#の探索経路に含まれない子を持つノード#v#が見つかるまで#x#の探索経路を逆に辿りながら、その過程で訪問したノードを削除する
+  \item #v#から根まで辿りながら、#u#を指していた#jump#があれば更新する
+\end{enumerate}
+\figref{binarytrie-remove}に削除の様子を示す。
+\begin{figure}
+  \begin{center}
+    \includegraphics[scale=0.90909]{figs/binarytrie-remove}
+  \end{center}
+  \caption{\figref{binarytrie-ex2}の#BinaryTrie#から値9を削除する}
+  \figlabel{binarytrie-remove}
+\end{figure}
+\codeimport{ods/BinaryTrie.remove(x)}
+
+\begin{thm}
+#BinaryTrie#は、#w#ビット整数を格納するための#SSet#インターフェースの実装である。
+#BinaryTrie#における#add(x)#、#remove(x)#、#find(x)#の実行時間はいずれも$O(#w#)$である。
+#n#個の要素を格納する#BinaryTrie#の空間使用量は$O(#n#\cdot#w#)$である。
+\end{thm}
+
+% XXX: doubly-logarithmicはlog(log(x))のことだろうか（なんと訳そう） % YJ: 訳はなさそうなのでexplicitにLog-Log時間とか？ % Polylogarithm (多重対数関数)と被る名称は良くない
+\section{#XFastTrie#：$O(\log(\log #n#))$時間での検索}
+\seclabel{xfast}
+
+\ejindex{XFastTrie@#XFastTrie#}{XFastトライ}%
+#BinaryTrie#の性能は、あまりパッとしない。
+データ構造に格納できる要素数#n#は最大でも$2^{#w#}$なので、$\log #n#\le #w#$である。
+少なくとも、この本で説明してきた比較に基づく#SSet#の実装は、いずれも#BinaryTrie#と同じくらい効率的であった。
+それに、整数しか格納できないという#BinaryTrie#のような制限もなかった。
+
+これから説明する#XFastTrie#は、各深さに1つずつ、合計で#w+1#個のハッシュテーブルを#BinaryTrie#に付け足しただけのデータ構造である。
+#XFastTrie#では、これらのハッシュテーブルを使うことで、#find(x)#の実行時間を$O(\log #w#)$に改善できる。
+#BinaryTrie#における#find(x)#は、#x#への探索経路を辿り、左右の進みたい方向に子を持たないノード#u#を見つけた時点でほぼ完了であった。
+その時点で、#u.jump#を利用して葉#v#にジャンプし、#v#もしくは葉のリストにおける#v#の直前のノードのどちらかを返すだけである。
+#XFastTrie#では、深さに関する二分探索によりノード#u#を見つけることで、この探索処理を高速に行う。
+\ejindex{binary search}{にぶんたんさく@二分探索}%
+
+二分探索では、探しているノード#u#について、ある深さ#i#より上にあるのか、#i#またはその下にあるのかを判定する必要がある。
+これは、#x#の二進表記における上位#i#ビットを見ればわかる。
+このビット列によって、根から深さ#i#までの#x#の探索経路が決まる。
+例えば、\figref{xfast-path}を見てほしい。
+14（二進表記では1110）の探索経路における最後のノード#u#は、深さ2のところにある、$11{\star\star}$というラベルが付いたノードである。
+これは、深さ3の位置に$111{\star}$というラベルが付いたノードがないためである。
+このようにして、深さ#i#のノードすべてに、#i#ビットの整数でラベルを付けられる。
+すると、探している#u#が深さ#i#、またはそれより下にあるのは、深さ#i#に#x#の上位#i#ビットと一致するラベルを持つノードがあるとき、かつそのときに限られる。
+
+\begin{figure}
+  \begin{center}
+    \includegraphics[scale=0.90909]{figs/xfast-path}
+  \end{center}
+  \caption{ラベル$111\star$を持つノードは存在しないので、14（1110）の探索経路はラベル$11{\star\star}$を持つノードで終了する}
+  \figlabel{xfast-path}
+\end{figure}
+
+#XFastTrie#では、$#i#\in\{0,\ldots,#w#\}$について、深さ#i#のすべてのノードを#USet# #t[i]#に格納する。
+#USet#はハッシュテーブル（\chapref{hashing}参照）で実装する。
+#USet#を使うことで、深さ#i#に#x#の上位#i#ビットと一致するラベルを持つノードがあるかどうか、定数オーダーの期待実行時間で判定できる。
+具体的には、そのようなノードを%
+\javaonly{#t[i].find(x>>>(w-i))#}%
+\cpponly{#t[i].find(x>>(w-i))#}%
+\pcodeonly{#t[i].find(x>>(w-i))#}%
+のようにして探し出せる。
+
+#u#を見つけ出すのに二分探索が使えるのは、ハッシュテーブル$#t[0]#,\ldots,#t[w]#$のおかげである。
+最初の段階でわかっているのは、$0\le #i#< #w#+1$を満たす深さ#i#に#u#があることである。
+そこで、まず$#l#=0$および$#h#=#w#+1$とし、
+$#i#=\lfloor (#l+h#)/2\rfloor$についてハッシュテーブル#t[i]#を繰り返し検索する。
+そして、$#t[i]#$が#x#の上位#i#ビットと一致するラベルを持つノードを含むとき（したがって#u#が深さ#i#、またはそれよりも下にあるとき）、#l=i#とする。
+そうでない、つまり#u#が深さ#i#よりも上にあるときは、#h=i#とする。
+$#h-l#\le 1$になった段階で、この処理を終える。
+このとき、#u#は深さ#l#にある。
+あとは、#u.jump#および葉の双方向連結リストを使って、#find(x)#の処理を完了する。
+\codeimport{ods/XFastTrie.find(x)}
+上に示したメソッドでは、#while#ループにおける各繰り返しにおいて、#h-l#が約半分になる。
+よって、このループを$O(\log #w#)$回繰り返したところで#u#が見つかる。
+繰り返しのたびに、毎回一定量の作業を実行し、#USet#の#find(x)#を1回だけ呼ぶので、
+#USet#における検索の実行時間の期待値は定数オーダーである。
+残りの処理の実行時間も定数オーダーなので、#XFastTrie#における#find(x)#の実行時間の期待値は$O(\log#w#)$である。
+
+#XFastTrie#における#add(x)#および#remove(x)#は、#BinaryTrie#における各操作とほとんど同じである。
+ハッシュテーブル#t[0]#,\ldots,#t[w]#の更新処理を追加すればよい。
+#add(x)#の実行中に、深さ#i#でノードが作られたら、このノードを#t[i]#に加えるようにする。
+#remove(x)#の実行中に、深さ#i#でノードが削除されるなら、このノードを#t[i]#から削除するようにする。
+ハッシュテーブルにおける追加と削除の期待実行時間は定数オーダーなので、この修正によって#add(x)#と#remove(x)#の期待実行時間は定数オーダーしか増えない。
+#add(x)#および#remove(x)#のコードは、#BinaryTrie#のときに示した長いコードとほぼ同じなので、ここには掲載しない。
+
+次の定理に#XFastTrie#の性能をまとめる。
+
+\begin{thm}
+#XFastTrie#は、#w#ビット整数を格納するための#SSet#インターフェースの実装である。
+#XFastTrie#がサポートするのは次の操作である。
+\begin{itemize}
+\item #add(x)#および#remove(x)#の実行時間の期待値は$O(#w#)$である
+\item #find(x)#の実行時間の期待値は$O(\log #w#)$である
+\end{itemize}
+#n#個の要素を格納する#XFastTrie#の空間使用量は$O(#n#\cdot#w#)$である。% YJ space 領域
+\end{thm}
+
+\section{#YFastTrie#：$O(\log(\log #n#))$時間の#SSet#}
+\seclabel{yfast}
+
+#XFastTrie#における検索の実行時間は、#BinaryTrie#に比べて指数的に速くなった。
+しかし、#add(x)#と#remove(x)#の実行時間は依然としてそれほど速くない。
+そのうえ、空間使用量は$O(#n#\cdot#w#)$であり、この本で紹介した他の#SSet#の実装の$O(#n#)$と比べて大きい。
+この2つの問題は互いに関連している。
+具体的には、#n#回の#add(x)#によって大きさ$#n#\cdot#w#$の構造を作れば、#add(x)#の1回あたりの実行時間と空間使用量は#w#程度のオーダーになる。
+
+\ejindex{YFastTrie@#YFastTrie#}{YFastトライ}%
+この節で紹介する#YFastTrie#は、#XFastTrie#の実行時間と空間使用量を改善するものだ。
+#YFastTrie#では#XFastTrie#（以降では#xft#とする）を使うが、この#xft#には$O(#n#/#w#)$個の値しか入れない。
+こうすると、#xft#の空間使用量は$O(#n#)$になる。
+さらに、#add(x)#と#remove(x)#を#w#回実行するときは、そのうち1回のみを#xft#に対して実行する。
+このようにすることで、#xft#における#add(x)#と#remove(x)#の平均実行時間は定数になる。
+
+#xft#には#n#/#w#個の要素しか格納しないのに、残りの$#n#(1-1/#w#)$個の要素はどこへ行ってしまうのか。
+これらの要素は、\emph{二次構造}へと移動する。ここでは、二次構造として、#Treap#（\secref{treap}参照）を拡張したデータ構造を使う。
+\ejindex{secondary structure}{にじこうぞう@二次構造}%
+二次構造は全部でおよそ#n#/#w#個あり、1つの二次構造には平均して$O(#w#)$個の要素を格納することにする。
+#Treap#は#SSet#の操作を対数時間でサポートするので、各操作の実行時間は、当初の目論見通り$O(\log #w#)$である。
+
+より具体的に言うと、#YFastTrie#では、確率$1/#w#$で選り抜いたデータを格納するための#XFastTrie#を保持しておく。
+この#XFastTrie#（#xft#）には、都合により、常に$2^{#w#}-1$という値を含めておく。
+また、#xft#に含める要素は、$#x#_0<#x#_1<\cdots<#x#_{k-1}$とする。
+各要素$#x#_i$には#Treap#が対応しており（以降では$#x#_i$に対応する#Treap#を$#t#_i$とする）、これに$#x#_{i-1}+1,\ldots,#x#_i$の範囲の値をすべて格納する。
+\figref{yfast}にこの様子を示す。
+
+\begin{figure}
+  \begin{center}
+    \includegraphics[scale=0.90909]{figs/yfast}
+  \end{center}
+  \caption{0, 1, 3, 4, 6, 8, 9, 10, 11, 13を含む#YFastTrie#}
+  \figlabel{yfast}
+\end{figure}
+
+#YFastTrie#における#find(x)#は実に簡単である。
+#x#を#xft#から検索すれば、$#t#_i$に対応する$#x#_i$が見つかる。
+そこで$#t#_i$の#find(x)#メソッドを使えば、求めていることが実現できる。
+このメソッド全体は1行で書ける。
+\codeimport{ods/YFastTrie.find(x)}
+はじめの#xft#に対する#find(x)#にかかる時間は$O(\log#w#)$である。
+その次の#Treap#に対する#find(x)#にかかる時間は$O(\log r)$である。
+ここで、$r$は#Treap#の大きさである。
+#Treap#の大きさの期待値は$O(#w#)$なので（この節の後半で示す）、結局、この操作の実行時間は$O(\log #w#)$である
+\footnote{$\E[r]=#w#$ならば$\E[\log r] \le \log w$という\emph{Jensenの不等式}の応用である。}。
+
+#YFastTrie#への要素の追加も、ほとんどの場合は実に単純だ。
+#add(x)#メソッドでは、#x#を挿入すべきTreapを特定するために、#xft.find(x)#を呼ぶ。
+適切な#Treap#が見つかったら、それを#t#とし、#t.add(x)#を呼ぶことで#x#を#t#に追加する。
+ここで、確率$1/#w#$で表が、確率$1-1/#w#$で裏が出るような偏りのあるコインを投げる。
+もし表が出れば、#x#を#xft#に追加する。
+
+ここから少し複雑になる。
+#x#を#xft#に追加するとき、#t#を2つの#Treap#に分割しなければならない。
+それらを#t1#および#t'#としよう。
+#t1#には、#x#以下の値をすべて含める。
+#t'#は、それ以外の値を含むように#t#を更新したものである。
+最後に、#(x,t1)#という組を#xft#に追加する。
+\figref{yfast-add}に例を示す。
+\codeimport{ods/YFastTrie.add(x)}
+\begin{figure}
+  \begin{center}
+	% TODO: コードの最後が変: return文が２つ続いている
+    \includegraphics[scale=0.90909]{figs/yfast-add}
+  \end{center}
+  \caption{#YFastTrie#に値2、値6を追加する。6を追加するときにコイン投げで表が出たので、6は#xft#に追加され、$4,5,6,8,9$を含む#Treap#は分割される}
+  \figlabel{yfast-add}
+\end{figure}
+#x#を#t#に追加するのにかかる時間は$O(\log #w#)$である。
+\excref{treap-split}では、#t#を分割して#t1#と#t'#を得る処理の実行時間の期待値が$O(\log #w#)$であることを示した。
+$(#x#,#t1#)$を#xft#に追加する処理の実行時間は$O(#w#)$だが、これが起こる確率は$1/#w#$である。
+以上より、#add(x)#の実行時間の期待値は次のようになる。
+\[
+    O(\log#w#) + \frac{1}{#w#}O(#w#) = O(\log #w#)
+\]
+
+#remove(x)#は、#add(x)#による操作を取り消す。
+まず、#xft.find(x)#の結果を含んでいる#xft#から、葉#u#を見つける。
+#u#から#x#を含んでいる#Treap#（#t#）を得て、その#Treap#から#x#を削除する。
+もし#x#が#xft#にも含まれていれば、そして#x#が$2^{#w#}-1$でなければ、#x#を#xft#から削除し、#x#を含む#Treap#の要素をすべて別の#Treap#（#t2#）に追加する。
+ここで、#t2#は、連結リストにおける#u#の直後のノードに対応する#Treap#である。
+\figref{yfast-remove}にこの様子を示す。
+\codeimport{ods/YFastTrie.remove(x)}
+\begin{figure}
+  \begin{center}
+    \includegraphics[scale=0.90909]{figs/yfast-remove}
+  \end{center}
+  \caption{\figref{yfast-add}の#YFastTrie#から値1、値9を削除する}
+  \figlabel{yfast-remove}
+\end{figure}
+#xft#からノード#u#を見つけるのに必要な時間の期待値は$O(\log#w#)$である。
+#t#から#x#を削除するのにかかる時間の期待値も$O(\log#w#)$である。
+繰り返しになるが、\excref{treap-split}では、#t#を分割して#t1#と#t'#を得る処理の実行時間の期待値も$O(\log #w#)$であることを示した。
+#xft#から#x#を削除する必要があるときは、この処理に$O(#w#)$の時間がかかるが、#xft#に#x#が含まれる確率は$1/#w#$である。
+よって、#YFastTrie#における削除処理の実行時間の期待値は$O(\log #w#)$である。
+
+ここまでの説明では、このデータ構造における各#Treap#の大きさの説明を後回しにしていた。
+この章を終える前に、必要な定理を証明しておく。まずは次の補題を示す。
+
+\begin{lem}\lemlabel{yfast-subtreesize}
+#YFastTrie#に格納する整数を#x#とし、#x#を含むTreap #t#の要素数を$#n#_#x#$とする。
+このとき、$\E[#n#_#x#] \le 2#w#-1$が成り立つ。
+\end{lem}
+
+\begin{proof}
+\figref{yfast-sample}を見てほしい。
+いま、#YFastTrie#の各要素を、$#x#_1<#x#_2<\cdots<#x#_i=#x#<#x#_{i+1}<\cdots<#x#_#n#$とする。
+#Treap# #t#に含まれる#x#以上の要素を$#x#_i,#x#_{i+1},\ldots,#x#_{i+j-1}$とする。
+このうち、#add(x)#の際の偏りのあるコイン投げで表が出たのは、$#x#_{i+j-1}$だけである。
+つまり、$\E[j]$は、偏りのあるコイン投げを表が出るまで繰り返すときのコイン投げ回数の期待値と等しい
+\footnote{この解析では、$j$が$#n#-i+1$を超えることがないことを無視している。しかし、その場合は$\E[j]$が小さくなるので、上界に関する性質は依然として成り立つ。}。
+コイン投げは独立な試行であり、表が出る確率は$1/#w#$である。
+そのため$\E[j]\le#w#$である
+（$#w#=2$の場合の解析については\lemref{coin-tosses}を参照してほしい）。
+
+同様に、#t#の要素で#x#より小さいもの$#x#_{i-1},\ldots,#x#_{i-k}$について、これらに対応する$k$回のコイン投げはいずれも裏であり、$#x#_{i-k-1}$のコイン投げは表である。
+先の段落と同じく、偏りのあるコイン投げを表が出るまで繰り返すときに裏が出る回数を考えると、$\E[k]\le#w#-1$だとわかる。
+
+まとめると、$#n#_#x#=j+k$より、以下のようになる。
+\[  \E[#n#_#x#] = \E[j+k] = \E[j] + \E[k] \le 2#w#-1 \qedhere \]
+\end{proof}
+\begin{figure}
+  \begin{center}
+    \includegraphics[width=\ScaleIfNeeded]{figs/yfast-sample}
+  \end{center}
+  \caption{#x#を含む#Treap# #t#の要素数は連続した2回のコイン投げ試行により決まる}
+  \figlabel{yfast-sample}
+\end{figure}
+%Surprisingly, the bound in \lemref{yfast-subtreesize} is tight.  (If this
+%isn't surprising to the reader, they can stop reading this paragraph now.)
+%This is counterintuitive because #xft# contains any particular element
+%with probability $1/#w#$ so it contains about $n/#w#$ elements.  In other
+%words, the average number of elements assigned to one treap is #w#.
+%\lemref{yfast-subtreesize} says that the expected size of the treap that
+%contains #x# is about twice as large as the average.  This seeming
+%discrepancy comes from the fact that larger subtrees contain more elements
+%and therefore #x# is more likely to be in a larger subtree than a smaller
+%one.
+
+\lemref{yfast-subtreesize}は、#YFastTrie#の性能をまとめた次の定理を示す最後のピースである。
+
+\begin{thm}
+#YFastTrie#は、#w#ビット整数を格納するための#SSet#インターフェースの実装である。
+#YFastTrie#は、#add(x)#、#remove(x)#、#find(x)#をサポートし、いずれの実行時間の期待値も$O(\log #w#)$である。
+#n#個の要素を格納する#YFastTrie#の空間使用量は$O(#n#+#w#)$である。
+\end{thm}
+
+空間使用量に#w#が影響するのは、#xft#が常に値$2^#w#-1$を格納していることによる。
+実装を修正して、この値を格納せずに済ませることも可能だ
+（ただし、いくつか場合分けをコードに追加する必要がある）。
+この場合、上の定理における空間使用量は$O(#n#)$になる。
+
+\section{ディスカッションと練習問題}
+#add(x)#、#remove(x)#、#find(x)#の実行時間がいずれも$O(\log#w#)$であるデータ構造として初めて提案されたのは、van~Emde~Boasによるもので、
+\emph{van~Emde~Boas木}
+\ejindex{van Emde Boas tree}{van Emde Boasぎ@van Emde Boas木}%
+（または\emph{stratified木}）
+\ejindex{stratified tree}{stratifiedき@stratified木}%
+という名で知られている\cite{e77}。
+オリジナルのvan~Emde~Boas木の大きさは$2^{#w#}$だったので、大きな整数を扱うには非実用的であった。
+
+#XFastTrie#と#YFastTrie#は、Willardによって提案された\cite{w83}。
+#XFastTrie#とvan~Emde~Boas木には密接な関係がある。
+例えば、
+#XFastTrie#におけるハッシュテーブルはvan~Emde~Boas木の配列を置き換えたものである。
+つまり、ハッシュテーブル#t[i]#に要素を格納する代わりに、van~Emde~Boas木では長さ$2^{#i#}$の配列に要素を格納する。
+
+整数を格納するためのデータ構造としては、これらのほかに、FredmanとWillardによるfusion木がある\cite{fw93}。
+\ejindex{fusion tree}{fusionぎ@fusion木}%
+このデータ構造は、#n#個の#w#ビット整数を$O(#n#)$の領域に格納でき、#find(x)#を$O((\log #n#)/(\log #w#))$の時間で実行できる。
+$\log #w# > \sqrt{\log #n#}$ならばfusion木を、$\log #w# \le \sqrt{\log #n#}$なら#YFastTrie#を使えば、空間使用量が$O(#n#)$で#find(x)#にかかる時間が$O(\sqrt{\log #n#})$であるようなデータ構造が得られる。
+近年、P\v{a}tra\c{s}cu and Thorupが示した下界によると、$O(#n#)$だけの領域を使うデータ構造としては最適なものになる\cite{pt07}。
+
+\begin{exc}
+単純化された#BinaryTrie#を設計、実装せよ。
+これは連結リストや#jump#ポインタを持たないものとする。ただし、#find(x)#の実行時間は依然として$O(#w#)$である必要がある。
+\end{exc}
+
+\begin{exc}
+単純化された#XFastTrie#を設計、実装せよ。
+これは二分トライ木を使わないものとする。
+代わりに、この実装では、すべてを双方向連結リストと$#w#+1$個のハッシュテーブルを使って格納する。
+\end{exc}
+
+\begin{exc}
+#BinaryTrie#は、長さ#w#のビット列を根から葉への経路として表現するデータ構造であると考えられる。
+この発想を、可変長の文字列を格納する#SSet#の実装に拡張し、#add(s)#、#remove(s)#、#find(s)#をいずれも#s#の長さに比例する時間で実行できるデータ構造を実装せよ。
+
+\noindent ヒント：データ構造の各ノードは、文字の値によってインデックスを計算するハッシュテーブルを格納する。
+\end{exc}
+
+\begin{exc}
+整数$#x#\in\{0,\ldots2^{#w#}-1\}$について、#x#と#find(x)#の返り値との差を$d(#x#)$と定義する
+（#find(x)#が#null#を返すときは、$d(#x#)$は$2^#w#$であるとする）。
+例えば、#find(23)#が43を返すとき、$d(23)=20$である。
+  \begin{enumerate}
+    \item #XFastTrie#における#find(x)#を修正し、実行時間の期待値が$O(1+\log d(#x#))$であるものを設計、実装せよ。
+	ヒント：ハッシュテーブル$t[#w#]$には、$d(#x#)=0$であるような値#x#がすべて格納されているので、処理を開始するのに適切な位置になるだろう。
+    \item #XFastTrie#における#find(x)#を修正し、実行時間の期待値が$O(1+\log\log d(#x#))$であるものを設計、実装せよ。
+  \end{enumerate}
+\end{exc}

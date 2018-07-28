@@ -1,0 +1,832 @@
+\chapter{ハッシュテーブル}
+\chaplabel{hashtables}
+\chaplabel{hashing}
+
+ハッシュテーブルは、広範囲（例えば$U=\{0,\ldots,2^{#w#}-1\}$）におよぶ整数のうち、少数（例えば#n#個）の要素を格納する能率の良い方法だ。
+% XXX: このハッシュテーブルを太字にしているのはどういう意図か？個人的にはもうひとつ前の文中のハッシュテーブルを太字にした方がよさそう
+\emph{ハッシュテーブル（hash table）}という言葉が指すデータ構造はたくさんある。
+\ejindex{hash table}{はっしゅてーぶる@ハッシュテーブル}%
+本章の前半ではハッシュテーブルの一般的な実装を2つ紹介する。
+チェイン法を使う実装と、線形探索を使う実装だ。
+
+ハッシュテーブルに整数ではないデータを格納することも多い。
+その場合には、各データに対応する\emph{ハッシュ値（hash code）}という整数を使って、データをハッシュテーブルに格納する。
+\ejindex{hash code}{はっしゅち@ハッシュ値}%
+この章の後半ではハッシュ値の生成方法について説明する。
+
+本章で扱う手法のうちいくつかでは、ある範囲の整数からランダムにどれかを選択する方法が必要になる。
+このランダムな整数は、本章のサンプルコード中ではハードコードされた定数になっている。
+この定数を生成した際には、空気中のノイズを利用したランダムなビット列を利用した
+\footnote{訳注：物理現象を利用するとランダムな整数が得られる、という事実だけ把握すれば、この本の理解には差し支えない。}。 % atmosphere noise randomness https://www.random.org/
+
+\section{#ChainedHashTable#: チェイン法を使ったハッシュテーブル}
+\seclabel{hashtable}
+
+\index{ChainedHashTable@#ChainedHashTable#}%
+\ejindex{chaining}{ちぇいんほう@チェイン法}%
+\ejindex{hashing with chaining}{ちぇいんほうによるはっしんぐ@チェイン法によるハッシング}%
+#ChainedHashTable#というデータ構造では、\emph{チェイン法（chaining）}を使って、データをリストの配列#t#に保存する。
+リスト全体に格納されている要素数の合計を整数#n#とする（\figref{chainedhashtable}）。
+\codeimport{ods/ChainedHashTable.t.n}
+
+\begin{figure}
+   \begin{center}
+     \includegraphics[width=\ScaleIfNeeded]{figs/chainedhashtable}
+   \end{center}
+   \caption{$#n#=14\text{、}#t.length#=16$である#ChainedHashTable#の例。この例では$#hash(x)#=6$である}
+   \figlabel{chainedhashtable}
+\end{figure}
+\ejindex{hash value}{はっしゅち@ハッシュ値}%
+\index{hash(x)@#hash(x)#}%
+データ#x#の\emph{ハッシュ値}を#hash(x)#と書く。#hash(x)#は$\{0,\ldots,#t.length#-1\}$の範囲にある値である。
+ハッシュ値が#i#であるようなデータは、すべてリスト#t[i]#に格納する。
+リストが長くなりすぎないように、次の不変条件を保持する。
+\[
+    #n# \le #t.length#
+\]
+こうすると、リストの平均要素数は常に1以下になる（$#n#/#t.length# \le 1$）。
+
+ハッシュテーブルに要素#x#を追加するには、配列#t#の大きさを増やす必要があるかどうかを確認し、その必要があれば#t#を拡張する。
+% XXX: resize の実装中で n の値を壊していないか？（本にはresizeのコードは出てこないが） -- Pat に確認する
+あとは、#x#から$\{0,\ldots,#t.length#-1\}$内の整数であるハッシュ値#i#を計算し、#x#をリスト#t[i]#に追加すればよい。
+\codeimport{ods/ChainedHashTable.add(x)}
+要素の追加時に配列の拡張が必要な場合は、#t#の大きさを2倍にし、元のテーブルに入っていた要素をすべて新しいテーブルに入れ直す。
+これは#ArrayStack#のときと同じ戦略であり、同じ結果を適用できる。
+すなわち、要素を追加する操作の列で均せば、配列の拡張にかかる償却実行時間は定数である（\pageref{lem:arraystack-amortized}ページの\lemref{arraystack-amortized}を参照）。
+
+配列の拡張にかかる時間以外に、#x#を#ChainedHashTable#に追加する操作にかかる時間は、リスト#t[hash(x)]#へ#x#を追記するのにかかる時間である。
+\chapref{arrays}や\chapref{linkedlists}で説明したどのリストの実装を使っても、この操作は定数時間で可能である。
+
+要素#x#をハッシュテーブルから削除するには、#x#が見つかるまでリスト#t[hash(x)]#を辿ればよい。
+\codeimport{ods/ChainedHashTable.remove(x)}
+削除にかかる実行時間は、$#n#_{#i#}$をリスト#t[i]#の長さとするとき、$O(#n#_{#hash(x)#})$である。
+
+ハッシュテーブルから要素#x#を見つける操作も同様である。
+次のようにリスト#t[hash(x)]#を線形に探索すればよい。
+\codeimport{ods/ChainedHashTable.find(x)}
+探索の操作にも、リスト#t[hash(x)]#の長さに比例する時間がかかる。
+
+ハッシュテーブルの性能はハッシュ関数の選択に大きく左右される。
+良いハッシュ関数は、要素を#t.length#個のリストに均等に分散する関数であり、このときの各リストの長さの期待値は$O(#n#/#t.length)# = O(1)$となる。
+一方、最悪のハッシュ関数は、すべての要素を同じリストに追加してしまう。
+すなわち、リスト#t[hash(x)]#の長さを#n#にしてしまう。
+次項では良いハッシュ関数の作り方を検討する。
+
+\subsection{乗算ハッシュ法}
+\seclabel{multihash}
+
+\ejindex{hashing!multiplicative}{はっしゅほう@ハッシュ法!じょうさん@乗算}%
+\ejindex{multiplicative hashing}{じょうさんはっしゅほう@乗算ハッシュ法}%
+乗算ハッシュ法は、剰余算術（\secref{arrayqueue}参照）と整数の割り算からハッシュ値を効率的に計算する方法である。
+割り算の商となる整数を計算し、余りを捨てるには、$\ddiv$演算子を使う。
+この演算子は、形式的には、任意の整数$a\ge 0$と$b\ge 1$について$a\ddiv b = \lfloor a/b\rfloor$と定義される。
+
+乗算ハッシュ法では、ある整数#d#について、大きさ$2^{#d#}$であるハッシュテーブルを使う。整数#d#は\emph{次数（dimension）}と呼ばれる。
+整数$#x#\in\{0,\ldots,2^{#w#}-1\}$のハッシュ値は次のように計算する。
+\[
+    #hash(x)# = ((#z#\cdot#x#) \bmod 2^{#w#}) \ddiv 2^{#w#-#d#}
+\]
+ここで、#z#は奇数の集合$\{1,3,5,\ldots,2^{#w#}-1\}$からランダムに選択する。
+整数のビット数を$#w#$とするとき、整数の演算の結果は$2^{#w#}$を法として合同になる
+\footnote{C、C\#、C++、Javaといった多くのプログラミング言語だと整数の演算結果はこうなるのだが、% numbersignの誤変換のためにこの改行が必須... -kshikano
+残念なことにRubyやPythonだと整数の演算結果が#w#ビットの固定桁のビットに収まらなくなると可変桁数の整数表現が使われてしまう。}
+ことを思い出すと、このハッシュ関数の効率がとても良いことがわかる（\figref{multihashing}参照）。
+しかも、$2^{#w#-#d#}$による整数の割り算は、二進法で右側の$#w#-#d#$ビットを落とせば計算できる（ビットを右に$#w#-#d#$個だけシフトすればよいので、実装は上の式よりも単純になる）。
+\codeimport{ods/ChainedHashTable.hash(x)}
+
+\begin{figure}
+  \begin{center}
+    \resizebox{.98\textwidth}{!}{
+    \setlength{\arrayrulewidth}{1pt}
+    \begin{tabular}{|lr@{}r|}\hline
+    $2^#w#$ (4294967296)&            #1#&#00000000000000000000000000000000# \\
+    #z# (4102541685)&                   &#11110100100001111101000101110101# \\
+    #x# (42) &                          &#00000000000000000000000000101010# \\
+    $#z#\cdot#x#$ &             #101000#&#00011110010010000101110100110010# \\
+    $(#z#\cdot#x#)\bmod 2^{#w#}$ &      &#00011110010010000101110100110010# \\
+    $((#z#\cdot#x#)\bmod 2^{#w#})\ddiv 2^{#w#-#d#}$ &&
+                      \multicolumn{1}{@{}l|}{#00011110#} \\\hline
+    \end{tabular}}
+    \setlength{\arrayrulewidth}{.4pt}
+  \end{center}
+  \caption{$#w#=32$、$#d#=8$とした乗算ハッシュ法の操作}
+  \figlabel{multihashing}
+\end{figure}
+
+次の補題により、乗算ハッシュ法ではハッシュ値の衝突がうまく回避されることがわかる（証明は後述）。
+
+\begin{lem}\lemlabel{universal-hashing}
+  #x#と#y#を、$\{0,\ldots,2^{#w#}-1\}$内の任意の整数であって、$#x#\neq #y#$を満たすものとする。
+  このとき、$\Pr\{#hash(x)#=#hash(y)#\} \le 2/2^{#d#}$が成り立つ。
+\end{lem}
+
+\lemref{universal-hashing}より、#remove(x)#と#find(x)#の性能は簡単に解析できる。
+
+\begin{lem}
+任意のデータ#x#について、#x#がハッシュテーブルに現れる回数を$#n#_{#x#}$とする。このとき、リスト#t[hash(x)]#の長さの期待値は$#n#_{#x#} + 2$以下である。
+\end{lem}
+
+\begin{proof}
+  ハッシュテーブルに含まれる#x#ではない要素の集合を$S$とする。
+  要素$#y#\in S$について、次のインジケータ確率変数を定義する。
+    \[ I_{#y#} = \left\{\begin{array}{ll}
+       1 & \mbox{if $#hash(x)#=#hash(y)#$} \\
+       0 & \mbox{otherwise}
+       \end{array}\right.
+    \]
+  ここで、\lemref{universal-hashing}より、$\E[I_{#y#}] \le 2/2^{#d#}=2/#t.length#$である。
+  リスト#t[hash(x)]#の長さの期待値は次のように求まる。
+  \begin{eqnarray*}
+   \E\left[#t[hash(x)].size()#\right] &=& \E\left[#n#_{#x#} + \sum_{#y#\in S} I_{#y#}\right] \\
+    &=& #n#_{#x#} + \sum_{#y#\in S} \E [I_{#y#} ] \\
+    &\le& #n#_{#x#} + \sum_{#y#\in S} 2/#t.length# \\
+    &\le& #n#_{#x#} + \sum_{#y#\in S} 2/#n# \\
+% XXX: 原著では不等号だが、等号ではないだろうか（Sの要素数と、n - n_x は、いずれもハッシュテーブルに含まれる x ではない要素の個数を表しており、等しいはず） -- Pat に確認します
+    % &\le& #n#_{#x#} + (#n#-#n#_{#x#})2/#n# \\
+    &=& #n#_{#x#} + (#n#-#n#_{#x#})2/#n# \\
+    &\le& #n#_{#x#} + 2
+  \end{eqnarray*}
+\end{proof}
+
+続いて\lemref{universal-hashing}を証明する。
+だがその前に、整数論の定理から導かれる結果が必要だ。
+次の証明では、$(b_r,\ldots,b_0)_2$と書いて、$\sum_{i=0}^r b_i2^i$を表す。ここで、$b_i$は0か1である。
+すなわち、$(b_r,\ldots,b_0)_2$は、二進表記が$b_r,\ldots,b_0$となる整数である。
+値が不明な桁については$\star$で表すことにする。
+
+\begin{lem}\lemlabel{hashing-mapping}
+  $\{1,\ldots,2^{#w#}-1\}$内の奇数の集合を$S$とする。
+  $S$の任意の要素を2つ選び、それぞれ$q$および$i$とする。
+  このとき、$#z#q\bmod 2^{#w#} = i$を満たす$#z#\in S$の要素が一意に存在する。
+\end{lem}
+
+\begin{proof}
+  $i$は$#z#$を選ぶと決まるので、$#z#q\bmod 2^{#w#} = i$を満たす$#z#\in S$が一意に決まることを示せばよい。
+
+  背理法で示す。
+  整数#z#と#z'#が存在し$#z#>#z#'$であると仮定する。
+  このとき、以下がいえる。
+  \[
+     #z#q\bmod 2^{#w#} = #z#'q \bmod 2^{#w#} = i
+  \]
+  よって、以下のようになる。
+  \[
+     (#z#-#z#')q\bmod 2^{#w#} = 0
+  \]
+  しかしこれは、ある整数$k$について次の式が成り立つことを意味する。
+  \begin{equation}
+    (#z#-#z#')q = k 2^{#w#} \eqlabel{factors}
+  \end{equation}
+  これを2進数として考えると以下のようになる。
+  \[
+    (#z#-#z#')q = k\cdot(1,\underbrace{0,\ldots,0}_{#w#})_2
+  \]
+  したがって、$(#z#-#z#')q$の末尾#w#桁はすべて0である。
+
+  加えて、$q\neq 0$かつ$#z#-#z#'\neq 0$より$k\neq 0$である。
+  $q$は奇数なので、この二進表記の末尾の桁は0ではない。
+  \[
+    q = (\star,\ldots,\star,1)_2
+  \]
+  $|#z#-#z#'| < 2^{#w#}$より、$#z#-#z#'$の末尾に連続して並ぶ0の個数は#w#未満である。
+  \[
+    #z#-#z#' = (\star,\ldots,\star,1,\underbrace{0,\ldots,0}_{<#w#})_2
+  \]
+  よって、積$(#z#-#z#')q$の末尾に連続して並ぶ0の個数は#w#未満である。
+  \[
+   (#z#-#z#')q = (\star,\cdots,\star,1,\underbrace{0,\ldots,0}_{<#w#})_2
+  \]
+  以上より、$(#z#-#z#')q$は\myeqref{factors}を満たさず、矛盾する。
+  したがって、背理法により\lemref{hashing-mapping}が満たされる。
+\end{proof}
+
+\lemref{hashing-mapping}から、次の便利な事実がわかる。
+すなわち、#z#が$S$から一様な確率でランダムに選ばれるとき、#zt#は$S$上に一様分布する。
+この便利な事実を使うと、#z#の二進表記が$#w#-1$桁のランダムなビットに$1$が続くものと考えられる。
+次の証明ではこれを使う。
+
+\begin{proof}[\lemref{universal-hashing}]
+「$#hash(x)#=#hash(y)#$」という条件は、「$#z# #x#\bmod2^{#w#}$の上位#d#ビットと$#z# #y#\bmod 2^{#w#}$の上位#d#ビットが等しい」と同値である。
+この条件の必要条件は、$#z#(#x#-#y#)\bmod 2^{#w#}$の上位#d#ビットがすべて0であるか、もしくはすべて1であることである。
+これは、$#zx#\bmod 2^{#w#} > #zy#\bmod 2^{#w#}$ならば次のように表せる。
+  \begin{equation}
+      #z#(#x#-#y#)\bmod 2^{#w#} =
+      (\underbrace{0,\ldots,0}_{#d#},\underbrace{\star,\ldots,\star}_{#w#-#d#})_2
+      \eqlabel{all-zeros}
+  \end{equation}
+もしくは、$#zx#\bmod 2^{#w#} < #zy#\bmod 2^{#w#}$ならば次のように表せる。
+  \begin{equation}
+      #z#(#x#-#y#)\bmod 2^{#w#} =
+      (\underbrace{1,\ldots,1}_{#d#},\underbrace{\star,\ldots,\star}_{#w#-#d#})_2
+      \eqlabel{all-ones}
+  \end{equation}
+よって、$#z#(#x#-#y#)\bmod 2^{#w#}$が\myeqref{all-zeros}か\myeqref{all-ones}のどちらかであることを示せばよい。
+
+  $q$を、ある整数$r\ge 0$について$(#x#-#y#)\bmod 2^{#w#}=q2^r$を満たす一意な奇数とする。
+  \lemref{hashing-mapping}より、$#z#q\bmod 2^{#w#}$の二進表記は、$#w#-1$桁のランダムなビットを持つ（最下位の桁は$1$）。
+  \[
+   #z#q\bmod 2^{#w#}  = (\underbrace{b_{#w#-1},\ldots,b_{1}}_{#w#-1},1)_2
+  \]
+  よって、$#z#(#x#-#y#)\bmod 2^{#w#}=#z#q2^r\bmod 2^{#w#}$は$#w#-r-1$桁のランダムなビットを持つ（その後に$1$が続き、さらに$r$個の$0$が続く）。
+  \[
+  #z#(#x#-#y#)\bmod 2^{#w#}  =
+  #z#q2^{r}\bmod 2^{#w#} =
+      (\underbrace{b_{#w#-r-1},\ldots,b_{1}}_{#w#-r-1},1,\underbrace{0,0,\ldots,0}_{r})_2
+  \]
+  これで次のようにして証明を完成できる。
+  $r > #w#-#d#$ならば、$#z#(#x#-#y#)\bmod 2^{#w#}$の上位#d#ビットは0と1を共に含む。よって、$#z#(#x#-#y#)\bmod 2^{#w#}$が\myeqref{all-zeros}または\myeqref{all-ones}である確率は0である。
+  $#r#=#w#-#d#$ならば、\myeqref{all-zeros}の確率は0だが、\myeqref{all-ones}である確率は$1/2^{#d#-1}=2/2^{#d#}$である
+  （$b_1,\ldots,b_{d-1}=1,\ldots,1$が必要だから）。
+  $r < #w#-#d#$ならば、$b_{#w#-r-1},\ldots,b_{#w#-r-#d#}=0,\ldots,0$か、もしくは$b_{#w#-r-1},\ldots,b_{#w#-r-#d#}=1,\ldots,1$である。
+  いずれの場合の確率も$1/2^{#d#}$であり、また、それぞれの事象は互いに排反である。
+  よって、このどちらかである確率は$2/2^{#d#}$である。
+\end{proof}
+
+\subsection{要約}
+
+次の定理は#ChainedHashTable#の性能をまとめたものだ。
+
+\begin{thm}\thmlabel{hashtable}
+  #ChainedHashTable#は、#USet#インターフェースを実装する。
+  #grow()#のコストを無視すると、#ChainedHashTable#における#add(x)#、#remove(x)#、#find(x)#の期待実行時間は$O(1)$である
+  \footnote{訳注：この実行時間は非常に優れている。これまで紹介したデータ構造には、追加、削除、検索のすべてを定数時間で行えるものはなかった。}。
+
+  さらに、空の#ChainedHashTable#に対して$m$個の#add(x)#、#remove(x)#からなる任意の操作列を順に実行するとき、#grow()#の呼び出しに要する償却実行時間は$O(m)$である。 % TODO: YJ 原文ではtotal of O(m) timeと書いてあるがconsistencyのため償却実行時間のほうがよいのでは -- spinute: 賛成
+\end{thm}
+
+\section{#LinearHashTable#：線形探索法}
+\seclabel{linearhashtable}
+
+\index{LinearHashTable@#LinearHashTable#}%
+前節のデータ構造#ChainedHashTable#ではリストの配列を使い、
+#i#番めのリストに$#hash(x)#=#i#$となる#x#をすべて格納する。
+これに対し、\emph{オープンアドレス法（open addressing）}と呼ばれる、配列#t#に直接要素を収める方法がある
+\footnote{訳注：例えば、Pythonの最も一般的な実装であるCPython 3.7では、オープンアドレス法でdictionaryが実装されている。}。
+\ejindex{open addressing}{おーぷんあどれすほう@オープンアドレス法}%
+本節では、この方法を採用した#LinearHashTable#というデータ構造について説明する
+% XXX: ここに書くと、Python が linear probing してるみたいに見えるけどそうではない気がする
+% \footnote{訳注：例えば、Pythonの最も一般的な実装であるCPythonでは、オープンアドレス法でdictionaryが実装されている。}
+% XXX: 具体的な実装を言及するなら、バージョンを書いておかないと情報が腐る可能性がある。（例えば、RubyのMRIでは2.5からhashtableの実装ががっつり変わった）
+。
+このデータ構造は、文献によっては\emph{線形探索法（linear probing）によるオープンアドレス}と呼ばれることもある。
+\ejindex{linear probing}{せんけいたんさくほう@線形探索法}%
+
+#LinearHashTable#の背景となるのは、#i=hash(x)#となる要素#x#をテーブルに格納するときに理想的な場所は#t[i]#であろうという考え方だ。
+すでにそこに他の要素が格納されている場合は、$#t#[(#i#+1)\bmod#t.length#]$を試す。
+それも無理なら、$#t#[(#i#+2)\bmod#t.length#]$を試す。
+#x#を格納できる場所が見つかるまで、これを繰り返す。
+
+#t#の値としては次の3種類を使う。
+\begin{enumerate}
+  \item データの値：#USet#に実際に入っている値
+  \item #null#：データが入っていないことを示す値
+  \item #del#：データが入っていたがそれが削除されたことを示す値
+\end{enumerate}
+カウンタとしては、#LinearHashTable#の要素数#n#と、データの個数と#del#の個数の合計#q#を使う。
+つまり、#q#の値は、#t#の中の#del#の個数を#n#に加えた値である。
+効率を考えると、#t#には#null#になっている場所がたくさん欲しいので、#t#の大きさを#q#に比べて十分に大きくする必要がある。
+そこで、#LinearHashTable#の操作では、不変条件$#t.length#\ge 2#q#$を常に満たすようにする。
+
+整理すると、#LinearHashTable#では、要素の配列#t#と整数#n#および#q#を利用する。#n#はデータ値の個数、#q#は#null#でない値の個数を保持する。
+さらに、ハッシュ関数の多くには値域となるテーブルの大きさが2の冪という制限があるので、不変条件$#t.length#=2^#d#$を満たす整数#d#も保持する。
+\codeimport{ods/LinearHashTable.t.n.q.d}
+
+#LinearHashTable#の#find(x)#操作は単純だ。
+$#i#=#hash(x)#$として、$#t[i]#, #t#[(#i#+1)\bmod #t.length#], #t#[(#i#+2)\bmod #t.length#], \ldots$を順番に探し、#t[i']=x#または#t[i']=null#を満たす添字#i'#を探す。
+#t[i']=x#のときは、#x#が見つかったとして#t[i']#を返す。
+#t[i']=null#のときは、#x#はハッシュテーブルに含まれないとして#null#を返す。
+\codeimport{ods/LinearHashTable.find(x)}
+
+#LinearHashTable#の#add(x)#操作も簡単に実装できる。
+#find(x)#を使って#x#がハッシュテーブルに含まれているかどうかを確認できる。
+#x#が含まれていなければ、$#t[i]#, #t#[(#i#+1)\bmod #t.length#], #t#[(#i#+2)\bmod #t.length#], \ldots$を順番に探し、#null#か#del#を見つけたら#x#に書き換え、#n#と#q#を1ずつ増やす。
+\codeimport{ods/LinearHashTable.add(x)}
+
+ここまでくれば、#remove(x)#の実装も明らかだろう。
+$#t[i]#, #t#[(#i#+1)\bmod #t.length#], #t#[(#i#+2)\bmod #t.length#], \ldots$を順番に探し、#t[i']=x#または#t[i']=null#である添字#i'#を見つける。
+#t[i']=x#ならば#t[i']=del#とし、#true#を返す。
+#t[i']=null#ならば、#x#はハッシュテーブルに含まれていない（そのため削除できない）ので、#false#を返す。
+\codeimport{ods/LinearHashTable.remove(x)}
+
+#del#を使っているおかげで、#find(x)#、#add(x)#、#remove(x)#の正しさは簡単に検証できる。
+いずれの操作でも、#null#でない値が#null#に書き換えられることはない。
+そのため、#t[i']=null#となる添字#i'#に辿り着けば、探している#x#はハッシュテーブルに含まれていないと証明できる。
+#t[i']#はずっと#null#だったのだから、#i'#より先の添字の場所に#add(x)#で要素が追加されていることはないからである。
+
+#resize()#が呼び出されるのは、#add(x)#に際して#null#でないエントリの数が$#t.length#/2$を上回るとき、もしくは、#remove(x)#に際してデータの入っているエントリ数が#t.length/8#を下回るときである。
+#resize()#は、配列を使った他のデータ構造の場合と同様に機能する。
+すなわち、まず$2^{#d#} \ge 3#n#$を満たす最小の非負整数#d#を見つける。
+続いて、大きさ$2^{#d#}$の配列#t#を割り当て、古い配列の要素をすべて移し替える。
+この処理の過程で、#q#を#n#に等しくリセットする。
+その理由は、新しい配列#t#には#del#が含まれないからである。
+\codeimport{ods/LinearHashTable.resize()}
+
+\subsection{線形探索法の解析}
+
+#add(x)#、#remove(x)#、#find(x)#は、いずれも#null#であるエントリが#t#に見つかると（あるいはその前に）終了する。
+直観的に線形探索法を解析すると、#t#のエントリの半分以上は#null#なので、すぐに#null#のエントリが見つかって操作の完了まで長い時間はかからないように見える。
+しかし、この直観を当てにしてはいけない。
+この直観に従うと、ある操作の完了までに探索する#t#のエントリは平均すると高々2個という結論になるが、これは正しくない。
+
+この節では、ハッシュ値が$\{0,\ldots,#t.length#-1\}$の範囲の一様な確率分布に従う独立な値であると仮定する。
+これは現実的な仮定ではないが、これを仮定すれば線形探索法の解析が可能になる。
+この節の後半では、Tabulation Hashingという、線形探索法で使うぶんには十分優秀なハッシュ法を説明する。
+さらに、#t#の添字はすべて#t.length#で割った剰余と等しいことも仮定する。
+つまり、単に#t[i]#と書いたら、$#t#[#i#\bmod#t.length#]$のことである。
+
+\ejindex{run}{れんぞく@連続}%
+%XXX: これ、 i == 0 と i == t.length - 1 のときはどうなの？ -- spinute: 何を心配している？
+%XXX: runの訳語 % YJ 連続かなあ。technical termとして本文中で他に連続は使われていない。
+ハッシュテーブルのエントリ$#t[i]#, #t[i+1]#,\ldots,#t#[#i#+k-1]$がいずれも#null#でなく、$#t#[#i#-1]=#t#[#i#+k]=#null#$であるとき、\emph{#i#から始まる長さ$k$の連続（run）}という。
+#t#の#null#でない要素の数はちょうど#q#であり、#add(x)#では常に$#q#\le#t.length#/2$となることが保証されている。
+最後に#resize()#されてから#t#に挿入された#q#個の要素を$#x#_1,\ldots,#x#_{#q#}$とする。
+仮定より、ハッシュ値$#hash#(#x#_j)$はいずれも一様分布に従う互いに独立な確率変数である。
+以上の準備で、線形探索法の解析に必要な次の補題を示せる。
+
+\begin{lem}\lemlabel{linear-probing}
+$\{0,\ldots,#t.length#-1\}$から#i#を1つ取って固定する。
+このとき、#i#から始まる長さ$k$の連続が発生する確率は、定数$c$（$0<c<1$）を使って$O(c^k)$と表せる。
+\end{lem}
+
+\begin{proof}
+#i#から始まる長さ$k$の連続があるということは、$#hash#(#x#_j)\in\{#i#,\ldots,#i#+k-1\}$を満たすような相異なる$k$個の要素$#x#_j$が存在する。
+この事象の発生確率は次のように計算できる。
+\[
+  p_k  = \binom{#q#}{k}\left(\frac{k}{#t.length#}\right)^k\left(\frac{#t.length#-k}{#t.length#}\right)^{#q#-k}
+\]
+なぜなら、そのような$k$個の要素からなる連続のそれぞれについて、$k$個の要素がハッシュテーブルの$k$箇所に、残りの$#q#-k$個の要素がハッシュテーブルの残りの$#t.length#-k$箇所に格納されるはずだからだ
+\footnote{$p_k$は、その定義に$#t#[#i#-1]=#t#[#i#+k]=#null#$という必要条件が含まれていないので、#i#から始まる長さ$k$の連続が発生する確率よりも大きいことに注意。}。
+
+次の導出では少しズルをして、$r!$を$(r/e)^r$で置き換える。
+この置き換えを許すと導出が簡単になるのである。
+$r!$と$(r/e)^r$の差は、スターリングの近似（\secref{factorials}）より、$O(\sqrt{r})$程度である。
+\excref{linear-probing}では、スターリングの近似を使ってより厳密な計算を読者にやってもらう予定だ。
+
+$p_k$は、#t.length#が最小値を取るときに最大値を取る。
+また、このデータ構造は不変条件$#t.length# \ge 2#q#$を保つ。
+よって、次の式が成り立つ。
+% XXX: TALK これ、一行目の不等号で ((t.length-k)/(t.length))^{q-k} <= ((2q-k)/(2q))^{q-k} を仮定してる気がするけど、必ずしも成り立たなくないか？ -- spinute: うーんそんな気がする。なんか具体的な反例出しました？
+\begin{align*}
+   p_k & \le \binom{#q#}{k}\left(\frac{k}{2#q#}\right)^k\left(\frac{2#q#-k}{2#q#}\right)^{#q#-k} \\
+  & = \left(\frac{#q#!}{(#q#-k)!k!}\right)\left(\frac{k}{2#q#}\right)^k\left(\frac{2#q#-k}{2#q#}\right)^{#q#-k} \\
+  & \approx \left(\frac{#q#^{#q#}}{(#q#-k)^{#q#-k}k^k}\right)\left(\frac{k}{2#q#}\right)^k\left(\frac{2#q#-k}{2#q#}\right)^{#q#-k} && \text{[スターリングの近似]} \\
+  & = \left(\frac{#q#^{k}#q#^{#q#-k}}{(#q#-k)^{#q#-k}k^k}\right)\left(\frac{k}{2#q#}\right)^k\left(\frac{2#q#-k}{2#q#}\right)^{#q#-k} \\
+ & = \left(\frac{#q#k}{2#q#k}\right)^k
+     \left(\frac{#q#(2#q#-k)}{2#q#(#q#-k)}\right)^{#q#-k} \\
+ & = \left(\frac{1}{2}\right)^k
+     \left(\frac{(2#q#-k)}{2(#q#-k)}\right)^{#q#-k} \\
+ & = \left(\frac{1}{2}\right)^k
+     \left(1+\frac{k}{2(#q#-k)}\right)^{#q#-k} \\
+ & \le \left(\frac{\sqrt{e}}{2}\right)^k
+\end{align*}
+最後の変形では、$x>0$ならば$(1+1/x)^x \le e$であることを利用した。
+ここで、$\sqrt{e}/{2}< 0.824360636 < 1$なので、補題が示された。
+\end{proof}
+
+\lemref{linear-probing}を使うことで、#find(x)#、#add(x)#、#remove(x)#の期待実行時間の上界を直接的に計算できる。
+まずは、#find(x)#を呼ぶが#x#が#LinearHashTable#に入っていないという、最もシンプルな場合を考える。
+この場合、$#i#=#hash(x)#$は$\{0,\ldots,#t.length#-1\}$の値を取り、#t#の中身とは独立な確率変数である。
+#i#が長さ$k$の連続の一部なら、#find(x)#の実行時間は$O(1+k)$以下である。
+よって、実行時間の期待値の上界を次のように計算できる。
+% XXX: これ無限級数の各項が1以上（＝kをt.lengthまでの有限級数で止めなくても上界の計算だから問題ない）という保証はどうやって確保してるの？ -- spinute: コメントの意味がよくわからない
+\[
+  O\left(1 + \left(\frac{1}{#t.length#}\right)\sum_{i=1}^{#t.length#}\sum_{k=0}^{\infty} k\Pr\{\text{#i#が長さ$k$の連続の一部}\}\right)
+\]
+内側の和を取っている長さ$k$の連続はk回カウントされているので、これをまとめて$k^2$とすれば、上の和は次のように変形できる。
+\begin{align*}
+  & { } O\left(1 + \left(\frac{1}{#t.length#}\right)\sum_{i=1}^{#t.length#}\sum_{k=0}^{\infty} k^2\Pr\{\mbox{#i#から長さ$k$の連続が始まる}\}\right) \\
+  & \le O\left(1 + \left(\frac{1}{#t.length#}\right)\sum_{i=1}^{#t.length#}\sum_{k=0}^{\infty} k^2p_k\right) \\
+  & = O\left(1 + \sum_{k=0}^{\infty} k^2p_k\right) \\
+  & = O\left(1 + \sum_{k=0}^{\infty} k^2\cdot O(c^k)\right) \\
+  & = O(1)
+\end{align*}
+最後の変形$\sum_{k=0}^{\infty} k^2\cdot O(c^k)$では、指数級数の性質を使っている
+\footnote{解析学の教科書では、この和は比を計算して求める。すなわち、ある正の数$k_0$が存在し、任意の$k\ge k_0$について、$\frac{(k+1)^2c^{k+1}}{k^2c^k} < 1$を満たす。}。
+以上より、#LinearHashTable#に入っていない#x#について、#find(x)#の期待実行時間は$O(1)$である。
+
+#resize()#のコストを無視していいなら、これで#LinearHashTable#における操作はすべて解析できたことになる。
+
+まず、上で示した#find(x)#の解析は、#add(x)#において#x#がハッシュテーブルに含まれないときにもそのまま適用できる。
+#x#がハッシュテーブルに含まれるときの#find(x)#の解析は、#add(x)#によって#x#を追加するときのコストと同じである。
+そして、#remove(x)#のコストも#find(x)#のコストと同じになる。
+
+まとめると、#resize()#のコストを無視すれば、#LinearHashTable#における操作の期待実行時間はいずれも$O(1)$である。
+#resize()#のコストを考える場合は、\secref{arraystack}で行った#ArrayStack#の償却解析と同様に考える。
+
+\subsection{要約}
+
+次の定理は#LinearHashTable#の性能をまとめたものだ。
+
+\begin{thm}\thmlabel{linear-probing}
+  #LinearHashTable#は、#USet#インターフェースを実装する。
+  #resize()#のコストを無視すると、#LinearHashTable#における#add(x)#、#remove(x)#、#find(x)#の期待実行時間は$O(1)$である。
+
+  さらに、空の#LinearHashTable#に対して#add(x)#、#remove(x)#からなる$m$個の操作の列を順に実行するとき、#resize()#にかかる時間の合計は$O(m)$である。
+\end{thm}
+
+\subsection{Tabulation Hashing}
+\seclabel{tabulation}
+
+\index{tabulation hashing}%
+#LinearHashTable#の解析では強い仮定を置いていた。
+すなわち、任意の相異なる要素$\{#x#_1,\ldots,#x#_#n#\}$について、そのハッシュ値$#hash#($x$_1),\ldots,#hash#(#x#_#n#)$が一様な確率で$\{0,\ldots,#t.length#-1\}$内に独立に分布するという仮定である。
+この仮定を実現する方法として、大きさ$2^{#w#}$の巨大な配列#tab#を準備し、すべてのエントリを互いに独立な#w#ビットのランダムな整数で初期化するというものがある。
+こうしておけば、#tab[x.hashCode()]#から#d#ビットの整数を取り出すことで#hash(x)#を実装できる。
+\codeimport{ods/LinearHashTable.idealHash(x)}
+\pcodeonly{ここで、#>>#は\emph{右シフト}演算子である。したがって、#x.hashCode() >> w-d#により#x#の#w#ビットのハッシュ値の上位#d#ビットが抽出できる。}
+
+あいにく、大きさ$2^{#w#}$の配列を1つ保持するのはメモリ利用の観点からは禁じ手である。
+そこで\emph{Tabulation Hashing}では、#w#ビットの整数を、それぞれが$#r#$ビットの$#w#/#r#$個の整数から構成されたものとして扱う。 % Tabulation hashingの訳語？
+この方法であれば、それぞれ大きさ$2^{#r#}$の配列が$#w#/#r#$個あればよい。
+これらの配列の全エントリを、互いに独立な#w#ビットのランダムな整数とする。
+#hash(x)#を計算するには、#x.hashCode()#を$#w#/#r#$個の#r#ビット整数に分割し、それぞれを配列の添字として使う。
+その後、各配列の値からビット単位の排他的論理和を計算し、その結果を#hash(x)#とする。
+% XXX: 原著では r=4 になっているが、r=8 ではないか -- Pat に確認
+次のコードは$#w#=32$、$#r#=8$の場合のものである。
+\codeimport{ods/LinearHashTable.hash(x)}
+この場合、#tab#は4つの列と$2^8=256$の行からなる二次元配列となる。
+\pcodeonly{
+上の#0xff#は\emph{16進数（hexadecimal numbers）}である。
+\ejindex{hexadecimal numbers}{16しんすう@16進数}%
+16進数の各桁は、16種類の値（0から9と、10から15を表すaからf）のうちのいずれかである。
+例えば、$#0xff#=15\cdot 16 + 15 = 255$である。
+#&#は\emph{ビット単位論理積（bitwise and）}演算子である。
+したがって、#h >> 8 & 0xff#は、#h#のビットのうち添字が8から15であるものを抽出する。}
+
+任意の#x#について#hash(x)#が$\{0,\ldots,2^{#d#}-1\}$の値を一様な確率で取ることは簡単に検証できる。
+少し計算すれば、ハッシュ値のペアが互いに独立であることも検証できる。
+これは、#ChainedHashTable#における乗算ハッシュ法の代わりにTabulation Hashingを使えることを意味する。
+
+残念ながら、相異なる任意の#n#個の値の組について、そのハッシュ値が互いに独立というわけではない。
+だとしても、Tabulation Hashingは\thmref{linear-probing}で示した性質を保証するぶんには十分なハッシュ法である。
+この話題については、本章の終わりで紹介する参考文献を参照してほしい。
+
+\section{ハッシュ値}
+
+\ejindex{hash code}{はっしゅち@ハッシュ値}%
+前節のハッシュテーブルでは、データに対して#w#ビットの整数のキーを対応させていた。
+しかし、キーは整数でないことも多い。
+例えば、文字列、オブジェクト、配列、あるいは他の複合データ型の場合もあるだろう。
+そのようなデータにもハッシュテーブルを使うには、これらのデータ型を#w#ビットのハッシュ値に対応させなければならない。
+このハッシュ値への対応は、以下の性質を満たす必要がある。
+
+\begin{enumerate}
+  \item #x#と#y#が等しいとき、#x.hashCode()#と#y.hashCode()#は等しい
+
+  \item #x#と#y#が等しくないとき、$#x.hashCode()#=#y.hashCode()#$である確率は小さい（すなわち$1/2^{#w#}$に近い）
+\end{enumerate}
+
+1つめの性質により、#x#をハッシュテーブルに入れたあとで#x#と等しい#y#を検索したときに、当然#x#が見つかることが保証される。
+2つめの性質は、整数への変換によるオブジェクトの損失を最小限にするためのものだ。
+2つめの性質により、相異なる2つの要素が、通常はハッシュテーブルの違う場所に入ることが保証される。
+
+\subsection{プリミティブな型のハッシュ値}
+
+\ejindex{hash code!for primitive data}{はっしゅち@ハッシュ値!ぷりみてぃぶがた@プリミティブ型}%
+#char#、#byte#、#int#、#float#などの小さいプリミティブな型については、簡単にハッシュ値を計算できる。
+これらの型には常に2進数による表現があり、その表現は通常は#w#ビットよりも短い
+\javaonly{（例えば、Javaでは#byte#は8ビット型であり、#float#は32ビット型である）}\cpponly{（例えば、C++では#char#はふつうは8ビット型であり、#float#は32ビット型である）}。
+このビット列を、単純に$\{0,\ldots,2^#w#-1\}$の範囲の整数として解釈すればよい。
+% XXX: 余談だが、IEEE 754 の signed zero は同じ値だが異なるビット表現を持つわけではないのだろうか
+そうすれば、2つの異なる値は異なるハッシュ値を持つ。
+また、2つの同じ値は同じハッシュ値を持つ。
+
+#w#ビットより長いプリミティブ型もいくつかある。
+その長さは、通常は整数$c$を使って$c#w#$ビットと表せる
+（Javaの#long#型と#double#型は$c=2$の例である）。
+このようなデータ型は、次項で扱うように、$c$個のオブジェクトを組み合わせたものとして考えればよい。
+
+\subsection{複合オブジェクトのハッシュ値}
+\seclabel{stringhash}
+
+\ejindex{hash code!for compound objects}{はっしゅち@ハッシュ値!ふくごうおぶじぇくと@複合オブジェクト}%
+複合オブジェクトのハッシュ値は、構成要素のハッシュ値を組み合わせて計算したい。
+これは思うほど簡単でない。
+ビット単位の排他的論理和を計算するといった小手先の手法はいくらでもあるが、そのうちの多くはうまくいかない
+（\excref{hash-hack-first}から\excref{hash-hack-last}を参照）。
+ただし、$2#w#$ビットの算術精度でよければ、単純かつ確実な方法がある。
+複合オブジェクトの構成要素を$P_0,\ldots,P_{r-1}$としよう。$P_0,\ldots,P_{r-1}$のそれぞれのハッシュ値は$#x#_0,\ldots,#x#_{r-1}$であるとする。
+このとき、互いに独立な#w#ビットの乱数$#z#_0,\ldots,#z#_{r-1}$と、$2#w#$ビットのランダムな奇数#z#から、複合オブジェクトのハッシュ値を次のように計算できる。
+\[
+   h(#x#_0,\ldots,#x#_{r-1}) =
+   \left(\left(#z#\sum_{i=0}^{r-1} #z#_i #x#_i\right)\bmod 2^{2#w#}\right)
+   \ddiv 2^{#w#}
+\]
+このハッシュ値の計算過程では、最後に#z#を掛けて$2^{#w#}$で割っていることに注目してほしい。
+これは$2#w#$ビットの中間結果に\secref{multihash}で紹介した乗算ハッシュ法を使って#w#ビットの最終結果を得ている。
+3つの構成要素#x0#、#x1#、#x2#からなる複合オブジェクトの場合について例を示す。 %  YJ 複合オブジェクトの各fieldを構成要素と訳した
+\javaimport{junk/Point3D.x0.hashCode()}
+\cppimport{ods/Point3D.hashCode()}
+\pcodeimport{ods/Point3d.hashCode()}
+次の定理は、この方法が実装の単純さだけでなく良い性質を持つことを示す。
+
+\begin{thm}\thmlabel{multihash}
+$#x#_0,\ldots,#x#_{r-1}$と$#y#_0,\ldots,#y#_{r-1}$を、いずれも$\{0,\ldots,2^{#w#}-1\}$の範囲にある#w#ビットの整数からなる列とする。
+さらに、少なくとも1箇所の添字$i\in\{0,\ldots,r-1\}$について、$#x#_i \neq #y#_i$が成り立つと仮定する。
+このとき、次が成り立つ。
+\[
+   \Pr\{ h(#x#_0,\ldots,#x#_{r-1}) =  h(#y#_0,\ldots,#y#_{r-1}) \}
+        \le 3/2^{#w#}
+\]
+\end{thm}
+
+\begin{proof}
+最後の乗算ハッシュ法については後半に考える。
+次の関数を定義する。
+  \[
+    h'(#x#_0,\ldots,#x#_{r-1}) =
+       \left(\sum_{j=0}^{r-1} #z#_j #x#_j\right)\bmod 2^{2#w#}
+  \]
+  $h'(#x#_0,\ldots,#x#_{r-1}) =  h'(#y#_0,\ldots,#y#_{r-1})$であるとする。
+  これは次のように書き直せる。
+  \begin{equation}  \eqlabel{bighash-x}
+      #z#_i(#x#_i-#y#_i) \bmod 2^{2#w#} = t
+  \end{equation}
+  ここで$t$は次のものである。
+  \[
+     t = \left(\sum_{j=0}^{i-1} #z#_j(#y#_j-#x#_j) + \sum_{j=i+1}^{r-1} #z#_j(#y#_j-#x#_j)\right) \bmod 2^{2#w#}
+  \]
+  $#x#_i> #y#_i$と仮定しても一般性を失わない。
+  すると\myeqref{bighash-x}は次のようになる。
+  \begin{equation}
+      #z#_i(#x#_i-#y#_i) = t \eqlabel{bighash-xx}
+  \end{equation}
+  上記のようになるのは、$#z#_i$と$(#x#_i-#y#_i)$はいずれも$2^{#w#}-1$以下なので、これらの積は$2^{2#w#}-2^{#w#+1}+1 < 2^{2#w#}-1$以下だからである。
+  仮定より$#x#_i-#y#_i\neq 0$なので、\myeqref{bighash-xx}は$#z#_i$について高々1つの解を持つ。
+  $#z#_i$と$t$は互いに独立（$#z#_0,\ldots,#z#_{r-1}$は互いに独立）なので、$h'(#x#_0,\ldots,#x#_{r-1})=h'(#y#_0,\ldots,#y#_{r-1})$を満たす$#z#_i$を選ぶ確率は$1/2^{#w#}$以下である。
+
+  最後に、乗算ハッシュ法を適用することで、$2#w#$ビットの中間結果$h'(#x#_0,\ldots,#x#_{r-1})$を#w#ビットの最終結果$h(#x#_0,\ldots,#x#_{r-1})$に縮める。
+  % XXX: 原著では\thmref{multihash}になっているが、使っているのは5.1で証明している乗法ハッシュ法のuniversal性である -- Pat に確認
+  \lemref{universal-hashing}より、$h'(#x#_0,\ldots,#x#_{r-1})\neq h'(#y#_0,\ldots,#y#_{r-1})$ならば$\Pr\{h(#x#_0,\ldots,#x#_{r-1}) = h(#y#_0,\ldots,#y#_{r-1})\} \le 2/2^{#w#}$である。
+  % TALK なぜここで証明中の定理を使っている？？定理の仮定を使うということ？？？ -- spinute: multihashではなく、univesal-hashingを参照しているのだと思います
+  以上より、次の式が成り立つ。
+  \begin{align*}
+    & \Pr\left\{\begin{array}{l}
+          h(#x#_0,\ldots,#x#_{r-1}) \\
+          \quad = h(#y#_0,\ldots,#y#_{r-1})\end{array}\right\} \\
+      &= \Pr\left\{\begin{array}{ll}
+            \mbox{$h'(#x#_0,\ldots,#x#_{r-1}) = h'(#y#_0,\ldots,#y#_{r-1})$ or} \\
+            \mbox{$[h'(#x#_0,\ldots,#x#_{r-1}) \neq h'(#y#_0,\ldots,#y#_{r-1})$} \\
+                  \mbox{\quad and } \\ \mbox{$#z#h'(#x#_0,\ldots,#x#_{r-1})\ddiv2^{#w#} = #z# h'(#y#_0,\ldots,#y#_{r-1})\ddiv 2^{#w#}]$}
+          \end{array}\right\} \\
+      &\le 1/2^{#w#} + 2/2^{#w#} = 3/2^{#w#} \enspace . \qedhere
+  \end{align*}
+\end{proof}
+% 上の式、andがどこにかかっているのかを明示するために角括弧 [ ] を追加した
+
+\ejindex{hash code!for strings}{はっしゅち@ハッシュ値!もじれつ@文字列}%
+\ejindex{hash code!for arrays}{はっしゅち@ハッシュ値!はいれつ@配列}%
+\subsection{配列と文字列のハッシュ値}
+\seclabel{polyhash}
+
+前項の手法は、オブジェクトが固定数の構成要素からなる場合にはうまくいく。
+しかし、#w#ビットの乱数$#z#_i$を構成要素の数だけ使う必要があるので、可変長のオブジェクトはうまく扱えない。
+
+擬似乱数列を使って必要な個数の$#z#_i$を生成できるかもしれないが、そうすると$#z#_i$が互いに独立でなくなってしまう。それらの擬似乱数列がハッシュ関数に悪影響をおよぼさないことは証明が難しい。
+特に、\thmref{multihash}の証明において$t$と$#z#_i$の独立性が使えなくなってしまう。
+
+\ejindex{prime field}{そたい@素体}%
+ここでは、より確実な方法として、ハッシュ値を得るのに素体上の多項式を利用する。
+ここで素体上の多項式とは、#p#を素数として、$#x#_i\in\{0,\ldots,#p#-1\}$が係数であるようなふつうの多項式のことを指す。% 下記の話を読むといわゆる「素体」を指している -kshikano
+次の定理は、素体上の多項式は通常の多項式とだいたい同じように扱えるという主張だ。
+本項で説明する方法で良い性質のハッシュ値が得られるのは、この定理のおかげである。
+
+\begin{thm}\thmlabel{prime-polynomial}
+% XXX: non-trivial polynomial の正確な定義は? -- リンクの証明によると非自明はf(x)=0でないこと。 http://eiche.theoinf.tu-ilmenau.de/fingerprint/ueber_polynome_modulo-englisch.pdf
+
+ $#p#$を素数、$f(#z#) = #x#_0#z#^0 + #x#_1#z#^1 + \cdots + #x#_{r-1}#z#^{r-1}$を$#x#_i\in\{0,\ldots,#p#-1\}$を係数とする非自明な多項式（つまり$x_0=0$でない）とする。%非自明な多項式は、最高次の係数がゼロでないこと（x_1,...,x_{r-1}も0でない必要はない） -kshikano
+ このとき、方程式$f(#z#)\bmod #p# = 0$は、$#z#\in\{0,\ldots,p-1\}$の範囲に高々$r-1$個の解を持つ。
+\end{thm}
+
+\thmref{prime-polynomial}を使うために、それぞれが$#x#_i\in \{0,\ldots,#p#-2\}$である整数の列$#x#_0,\ldots,#x#_{r-1}$のハッシュ値を、
+ランダムに選んだ整数$#z#\in\{0,\ldots,#p#-1\}$を使って次のように求める。
+\[
+   h(#x#_0,\ldots,#x#_{r-1})
+    = (#x#_0#z#^0+\cdots+#x#_{r-1}#z#^{r-1}+(#p#-1)#z#^r)\bmod #p#
+\]
+
+最後に追加した項$(#p#-1)#z#^r$に注目してほしい。
+この$(#p#-1)$は、$#x#_0,\ldots,#x#_{r}$という整数列の末尾の要素$#x#_r$だと考えてもよい。
+この末尾の要素は、整数列$\{0,\ldots,#p#-2\}$の要素のいずれとも異なる。
+$#p#-1$は、列の終わりを示すマーカーとみなせる。
+
+#z#の選択におけるランダム性は大きくないが、それでも上記は良いハッシュ値になる。これは、同じ長さの2つの列に関する次の定理よりいえる。
+
+\begin{thm}\thmlabel{stringhash-eqlen}
+  pを$#p#>2^{#w#}+1$を満たす素数とする。
+  $#x#_0,\ldots,#x#_{r-1}$と$#y#_0,\ldots,#y#_{r-1}$を$\{0,\ldots,2^{#w#}-1\}$の要素である#w#ビットの整数からなる列であるとする。
+  $i\in\{0,\ldots,r-1\}$のうち少なくとも1つ$#x#_i \neq #y#_i$が成り立つと仮定する。
+  このとき、次の式が成り立つ。
+  \[
+     \Pr\{ h(#x#_0,\ldots,#x#_{r-1}) =  h(#y#_0,\ldots,#y#_{r-1}) \}
+          \le (r-1)/#p#
+  \]
+\end{thm}
+
+\begin{proof}
+  等式$h(#x#_0,\ldots,#x#_{r-1}) =  h(#y#_0,\ldots,#y#_{r-1})$は次のように変形できる。
+  \begin{equation}  \eqlabel{strhash-eqlen}
+    (
+       (#x#_0-#y#_0)#z#^0+\cdots+(#x#_{r-1}-#y#_{r-1})#z#^{r-1}
+    )\bmod #p# = 0
+  \end{equation}
+  $#x#_#i#\neq #y#_#i#$なので、左辺の多項式は次数#i#について非自明である。%最高次rでの係数が0でなくても、i次の係数が0でなければよい（解を引き当てる可能性はさらに低くなる）、という部分が端折られているように見えるので補足 -kshikano
+  $#i#<#r#$なので、\thmref{prime-polynomial}より、#z#に関する方程式の解は高々$r-1$個である。
+  それらの解になるように#z#を選択してしまう確率は、$(r-1)/#p#$以下である。
+\end{proof}
+
+2つの列の長さが異なる場合、さらには、一方の列が他方の列の一部に含まれている場合も、このハッシュ関数で問題なく扱える。
+これは、このハッシュ関数が次のような無限列を扱えることによる。
+\[
+  #x#_0,\ldots,#x#_{r-1}, #p#-1,0,0,\ldots
+\]
+$r > r'$として、長さがそれぞれ$r$および$r'$の2つの列があるとき、2つの列は添字$i=r$で異なる。% $i=r'$では？（とりあえず原文ママ） -kshikano
+このとき、\myeqref{strhash-eqlen}は次のようになる。
+\[
+  \left(
+     \sum_{i=0}^{i=r'-1}(#x#_i-#y#_i)#z#^i + (#x#_{r'} - #p# + 1)#z#^{r'}
+     +\sum_{i=r'+1}^{i=r-1}#x#_i#z#^i + (#p#-1)#z#^{r}
+  \right)\bmod #p# = 0
+\]
+これは、\thmref{prime-polynomial}より、$#z#$について高々$r$個の解を持つ。
+\thmref{stringhash-eqlen}と合わせると、次のより一般的な定理が示せる。
+
+\begin{thm}\thmlabel{stringhash}
+  #p#を、$#p#>2^{#w#}+1$を満たす素数とする。
+  $#x#_0,\ldots,#x#_{r-1}$と$#y#_0,\ldots,#y#_{r'-1}$を、$\{0,\ldots,2^{#w#}-1\}$の範囲にある#w#ビットの整数から構成される相異なる列とする。
+  このとき次の式が成り立つ。
+  \[
+     \Pr\{ h(#x#_0,\ldots,#x#_{r-1}) =  h(#y#_0,\ldots,#y#_{r-1}) \}
+          \le \max\{r,r'\}/#p#
+  \]
+\end{thm}
+
+次のサンプルコードを見れば、配列#x#を含むオブジェクトが、このハッシュ関数によりどう扱われるかがわかるだろう。
+\javaimport{junk/GeomVector.hashCode()}
+\cppimport{ods/GeomVector.hashCode()}
+\pcodeimport{ods/GeomVector.hashCode()}
+
+このコードは、実装上の都合で、衝突確率がやや大きい。
+特に、#x[i].hashCode()#を31ビットに縮めるため、\secref{multihash}で$#d#=31$とした乗算ハッシュ法を使っている。
+これは、素数$#p#=2^{32}-5$を法とする足し算や掛け算を、符号なし63ビット整数で実行するためである。
+そのため、長いほうが長さ$r$である2つの相異なる列のハッシュ値が一致する確率は次の値以下になる。
+\[
+    2/2^{31} + r/(2^{32}-5)
+\]
+これは、\thmref{stringhash}で求めた$r/(2^{32}-5)$よりも大きい。
+
+\section{ディスカッションと練習問題}
+
+ハッシュテーブルとハッシュ値は広大で活発な研究分野であり、この章ではほんのさわりを説明しただけである。
+ハッシュ法のオンライン参考文献一覧\cite{hashing}\ejindex{Bibliography on Hashing}{はっしゅほうのさんこうぶんけん@ハッシュ法の参考文献}には2000近いエントリが含まれている。
+
+ハッシュテーブルにはさまざまな実装がある。
+\secref{hashtable}で紹介したものは、\emph{チェイン法によるハッシュ法}（hashing with chaining）と呼ばれる\ejindex{hashing with chaining}{ちぇいんほうによるはっしゅほう@チェイン法によるハッシュ法}%
+（各配列のエントリに要素のチェイン（#List#）が含まれる）。
+チェイン法によるハッシュ法の起源は、1953年1月のH. P. LuhnによるIBMの内部報告書にまでさかのぼる。この報告書は、連結リストに関する最古の文献の1つであるとも思われる。
+
+\ejindex{open addressing}{おーぷんあどれすほう@オープンアドレス法}%
+チェイン法によるハッシュ法の代替手段となるのが\emph{オープンアドレス法}だ。
+オープンアドレス法では、データを配列に直接格納する。
+\secref{linearhashtable}で説明した#LinearHashTable#は、このオープンアドレス法の一種である。
+この方法もやはりIBMの別のグループによって1950年代に提案された。
+オープンアドレス法では\emph{衝突の解決}（collision resolution）について考えなければならない。
+\ejindex{collision resolution}{しょうとつのかいけつ@衝突の解決}%
+ここでいう衝突は、2つの値が配列の同じ位置に割り当てられることを指す。
+衝突の解決方法にはいくつか種類があり、それぞれ性能保証も異なる。
+この章で示したものよりも精巧なハッシュ関数が必要になることが多い。
+
+さらに別のハッシュテーブルの実装として、\emph{完全ハッシュ法}（perfect hashing）と呼ばれる種類のものがある。
+\ejindex{perfect hashing}{かんぜんはっしゅほう@完全ハッシュ法}%
+完全ハッシュ法では、#find(x)#の実行時間が、最悪の場合でも$O(1)$となる。
+データセットが静的であれば、データセットに対する\emph{完全ハッシュ関数}（perfect hash function）を見つけることで、完全ハッシュ法を実現できる。
+\ejindex{perfect hash function}{かんぜんはっしゅかんすう@完全ハッシュ関数}%
+\ejindex{hash function!perfect}{はっしゅかんすう@ハッシュ関数!かんぜん@完全}%
+完全ハッシュ関数とは、各データを配列内で別々の位置に対応付けるような関数である。
+データが動的な場合には、\emph{FKS二段階ハッシュテーブル}（two-level hash table）
+\ejindex{two-level hash table}{にだんかいはっしゅてーぶる@二段階ハッシュテーブル}%
+\ejindex{hash table!two-level}{はっしゅてーぶる@ハッシュテーブル!にだんかい@二段階}%
+\cite{fks84,dkkmrt94}
+や \emph{cuckoo hashing} \cite{pr04}などが完全ハッシュ法として知られている。
+\ejindex{cuckoo hashing}{かっこうはっしゅほう@カッコウハッシュ法}%
+\ejindex{hash table!cuckoo}{はっしゅてーぶる@ハッシュテーブル!かっこう@カッコウ}%
+
+この章で紹介したハッシュ関数は、任意のデータセットに対してうまく動作することが証明できる既知の手法としては、おそらく最も実用的なものである。
+他の方法としては、CarterとWegmanによる先駆け的な研究成果である\emph{ユニバーサルハッシュ法}（universal hashing）を使ったものがあり、用途に応じてさまざまなハッシュ関数が提案されている\cite{cw79}。
+\ejindex{universal hashing}{ゆにばーさるはっしゅほう@ユニバーサルハッシュ法}%
+\ejindex{hashing!universal}{はっしゅほう@ハッシュ法!ユニバーサル}%
+\secref{tabulation}で説明したTabulation hashingは
+CarterとWegmanの研究\cite{cw79}によるものだが、この手法を線形探索法（と他のいくつかのハッシュテーブルの実装）に適用した場合の解析は、P\v{a}tra\c{s}cuとThorupの研究成果である\cite{pt12}。
+
+\emph{乗算ハッシュ法}（multiplicative hashing）のアイデアは非常に古く、
+\ejindex{multiplicative hashing}{じょうさんはっしゅほう@乗算ハッシュ法}%
+\ejindex{hashing!multiplicative}{はっしゅほう@ハッシュ法!じょうさん@乗算}%
+もはや伝承しか残されていない\cite[Section~6.4]{k97v3}。
+しかし、乗数#z#をランダムな奇数から選ぶという\secref{multihash}で説明したアイデアと解析は、Dietzfelbingerらの研究成果である\cite{dhkp97}。
+この乗算ハッシュ法は、最もシンプルなハッシュ法の1つだが、衝突確率が$2/2^{#d#}$である。これは、$2^{#w#}$から$2^{#d#}$へのランダムな関数に期待される衝突確率と比べると2倍も大きい。
+% XXX: multiply-addの訳語 % YJ random generatorの文脈だとlinear congruential generatorが線形合同法と訳されるけどどうでしょ。あるいは乗算ハッシュと統一して、乗算合同ハッシュ法とか。　https://ja.wikipedia.org/wiki/%E7%B7%9A%E5%BD%A2%E5%90%88%E5%90%8C%E6%B3%95
+\emph{multiply-addハッシュ法}は次の関数を使う方法だ。
+\ejindex{hashing!multiply-add}{はっしゅほう@ハッシュ法!multiply-add}%
+\ejindex{multiply-add hashing}{multiply-addはっしゅほう@multiply-addハッシュ法}%
+\[
+   h(#x#) = ((#z##x# + b) \bmod 2^{#2w#}) \ddiv 2^{#2w#-#d#}
+\]
+ここで、#z#と#b#はいずれも$\{0,\ldots,2^{#2w#}-1\}$からランダムに選出される。
+multiply-addハッシュ法の衝突確率は$1/2^{#d#}$である\cite{d96}。
+ただし、$2#w#$ビット精度の四則演算が必要になる。
+
+固定長の#w#ビットの整数列からハッシュ値を得る方法はたくさんある。
+特に高速な方法は次のものだ\cite{bhkkr99}。
+\[\begin{array}{l}
+  h(#x#_0,\ldots,#x#_{r-1}) \\
+   \quad = \left(\sum_{i=0}^{r/2-1} ((#x#_{2i}+#a#_{2i})\bmod 2^{#w#})((#x#_{2i+1}+#a#_{2i+1})\bmod 2^{#w#})\right) \bmod 2^{2#w#}
+\end{array}
+\]
+ここで$r$は偶数であり、$#a#_0,\ldots,#a#_{r-1}$はいずれも$\{0,\ldots,2^{#w#}\}$からランダムに選出される。
+この$2#w#$ビットのハッシュ値が衝突する確率は$1/2^{#w#}$である。
+これは、乗算ハッシュ法（かmultiply-addハッシュ法）を使って#w#ビットに縮めることができる。
+この計算は$r/2$回の$2#w#$ビット乗算だけで実現でき、高速である。
+\secref{stringhash}の方法だと、$r$回の乗算が必要であった
+（$\bmod$の計算は、#w#または$2#w#$ビットの足し算や掛け算では暗に実行される）。
+
+\secref{polyhash}で説明した素体を使った可変長配列のハッシュ法は、Dietzfelbingerらによるものだ\cite{dgmp92}。
+この方法では$\bmod$を使うが、これは時間のかかる機械語の命令であり、結果的に高速に計算できない。
+剰余の法として$2^{#w#}-1$を使う工夫をすれば、
+$\bmod$を加算とビット単位のand演算に置き換えられる\cite[Section~3.6]{k97v2}。
+他の方法としては、固定長の高速なハッシュ法を使って長さ$c>1$のブロックに対するハッシュ値を計算し、その結果の$\lceil r/c\rceil$個のハッシュ値の配列に素体を使った方法でハッシュ値を求めるという手法がある。
+
+\begin{exc}
+  ある大学では生徒が初めて講義を履修するときに学生番号を発行する。
+  この番号は1ずつ増える整数で、何年も前に0から始まり、いまでは数百万になっている。
+  百人の一年生が受講する講義にて、各生徒に学生番号から計算したハッシュ値を割り当てる。
+  このとき、下の2桁、あるいは上の2桁のどちらを使うのが優れているだろうか。説明せよ。
+\end{exc}
+
+\begin{exc}
+  \secref{multihash}の方法において、$#n#=2^{#d#}$かつ$#d#\le #w#/2$である場合を考える。
+  \begin{enumerate}
+    \item #z#によらず、相異なる#n#個の入力であって、同じハッシュ値を持つものが存在することを示せ（ヒント：これは簡単な問題であり、数論の知識などは必要ない）。
+    \item #z#が与えられたとき、#n#個の同じハッシュ値を持つ値を求めよ（これは少し難しい問題で、基本的な数論の知識が必要だ）。
+  \end{enumerate}
+\end{exc}
+
+\begin{exc}
+  \lemref{universal-hashing}で得た上界$2/2^{#d#}$は、ある意味で最適であることを示せ。 % TODO YJ 元の問題文は"$x=2^{#w#-#d#-2}$かつ$#y#=3#x#$のとき"の証明をすれば最適であることの証明になると言っているがこれは間違いでは。なので文を２つに分けるのはよいと思う。が、"ある意味"とはどういう意味？
+  $#x#=2^{#w#-#d#-2}$かつ$#y#=3#x#$のとき、$\Pr\{#hash(x)#=#hash(y)#\}=2/2^{#d#}$であることを示せ
+  （ヒント：$#zx#$と$#z#3#x#$の二進表記を考え、$#z#3#x# = #zx#+2#zx#$であることを利用せよ）。
+\end{exc}
+
+\begin{exc}\exclabel{linear-probing}
+  \secref{factorials}で与えたスターリングの公式を使って、\lemref{linear-probing}を、今度は誤魔化しなしで証明せよ。
+\end{exc}
+
+\begin{exc}
+次に示したのは、要素#x#を#LinearHashTable#に追加するコードを簡略化したものである。
+このコードでは、単純に、最初に見つけた#null#のエントリへ#x#を入れる。
+このコードは非常に遅い場合があることを示せ。
+具体的には、$O(#n#)$個の#add(x)#、#remove(x)#、#find(x)#からなる操作の列で、実行時間が$#n#^2$になる例を挙げよ。
+\codeimport{ods/LinearHashTable.addSlow(x)}
+\end{exc}
+
+\begin{exc}
+昔のJavaでは、#String#クラスの#hashCode()#メソッドでは、長い文字列のすべての文字を使っていなかった。
+例えば、16文字の文字列の場合、偶数番めの8文字だけを使っていた。
+これがよくないアイデアであること、すなわち、同じハッシュ値を持つ文字列がたくさん現れるような例を挙げよ。
+\end{exc}
+
+\begin{exc}\exclabel{hash-hack-first}
+2つの#w#ビットの整数#x#と#y#からなるオブジェクトがあるとき、$#x#+#y#$をハッシュ値とするのはよくないことを示せ。
+すなわち、ハッシュ値が0となるようなオブジェクトの例をたくさん挙げよ。
+\end{exc}
+
+\begin{exc}
+2つの#w#ビットの整数#x#と#y#からなるオブジェクトがあるとき、$#x#+#y#$をハッシュ値とするのはよくないことを示せ。
+すなわち、同じハッシュ値を持つオブジェクトの集まりの例を挙げよ。
+\end{exc}
+
+\begin{exc}\exclabel{hash-hack-last}
+2つの#w#ビットの整数#x#と#y#からなるオブジェクトがあるとする。
+決定的な関数$h(#x#,#y#)$により、#w#ビットの整数となるハッシュ値を計算するとする。
+このとき、ハッシュ値が一致するオブジェクトの集合であって、要素数の大きいものが存在することを示せ。
+\end{exc}
+
+\begin{exc}
+  ある正の数#w#について、$p=2^{#w#}-1$であるとする。
+  正の数#x#について次の式が成り立つ理由を説明せよ。
+  \[
+      (#x#\bmod 2^{#w#}) + (#x#\ddiv 2^{#w#}) \equiv #x# \bmod (2^{#w#}-1)
+  \]
+  （この式より、$#x# \bmod (2^{#w#}-1)$を計算する方法として、
+  $#x# \le 2^{#w#}-1$を満たすまで次のコードを繰り返すというアルゴリズムが得られる。）
+  \[
+    #x = x&((1<<w)-1) + x>>w#
+  \]
+  \end{exc}
+
+\begin{exc}
+標準ライブラリや、本書の#HashTable#および#LinearHashTable#を参考に、よく使われるハッシュテーブルの実装を見つけ、整数#x#に対して#find(x)#が線形時間で実行できるプログラムを実装せよ。
+つまり、テーブルの中の同じ位置に対応付けられる#n#個の整数の集まりを見つけよ。
+
+実装の出来不出来によっては、コードを見るだけで実行時間がわかる場合もあれば、挿入や検索をしてみて実行時間を測るコードを書く必要があるかもしれない（これはWebサーバーへのDoS攻撃に使われることがある\cite{cw03}）。
+\index{algorithmic complexity attack}%
+\end{exc}

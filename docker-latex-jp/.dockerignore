@@ -1,0 +1,7 @@
+# Git
+.git
+.gitignore
+
+# Mac OS X
+.DS_Store
+._*

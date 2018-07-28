@@ -1,0 +1,4 @@
+odsbuild:
+  build: docker-latex-jp
+  volumes:
+    - ./ods:/data/ods

@@ -1,0 +1,910 @@
+\chapter{配列を使ったリスト}
+\chaplabel{arrays}
+
+この章では\emph{backing array}と呼ばれる配列にデータを入れて、#List#インターフェースと#Queue#インターフェースを実装する方法を解説する
+\footnote{訳注：訳者が知る限り、backing arrayには広く通用する訳語がない。意訳するならば、「裏でも要素が一並びになっている配列」となるだろう。頻出用語ではなく、単に配列（array）と読み替えても問題はないだろう。重要なのは、裏でも要素が一並びになっているので、この章で述べる利点と欠点が生じることである。}。
+\index{backing array}%
+次の表に、この章で説明するデータ構造の操作にかかる実行時間を要約する。
+
+\newlength{\tabsep}
+\setlength{\tabsep}{\itemsep}
+\addtolength{\tabsep}{\parsep}
+\addtolength{\tabsep}{-2pt}
+\begin{center}
+\vspace{\tabsep}
+\begin{tabular}{|l|l|l|} \hline
+ & #get(i)#/#set(i,x)# & #add(i,x)#/#remove(i)# \\ \hline
+#ArrayStack# & $O(1)$ & $O(#n#-#i#)$ \\
+#ArrayDeque# & $O(1)$ & $O(\min\{#i#,#n#-#i#\})$ \\
+#DualArrayDeque# & $O(1)$ & $O(\min\{#i#,#n#-#i#\})$ \\
+#RootishArrayStack# & $O(1)$ & $O(#n#-#i#)$ \\ \hline
+\end{tabular}
+\vspace{\tabsep}
+\end{center}
+
+データを1つの配列に入れて動作するデータ構造には、一般に以下のような利点と欠点がある。
+
+\begin{itemize}
+  \item 配列では任意の要素に一定の時間でアクセスできる。
+  そのため、#get(i)#操作と#set(i,x)#操作を定数時間で実行できる
+
+  \item 配列はそれほど動的ではない。リストの中ほどに要素を追加、削除するには、隙間を作ったり埋めたりするため、配列に含まれる多くの要素を移動させる必要がある。
+  #add(i,x)#操作と#remove(i)#操作の実行時間が#n#と#i#に依存するのは、これが原因である
+
+  \item 配列は伸び縮みしない。
+  backing arrayのサイズより多くの要素をデータ構造に入れるには、新しい配列を割り当てて古い配列の要素をそちらにコピーしなければならず、この操作のコストは大きい
+\end{itemize}
+
+3つめは特に重要だ。
+上記の表の実行時間には、backing arrayの拡大と縮小にかかるコストが含まれていない。
+後述するように、注意深く設計すれば、backing arrayの拡大と縮小にかかるコストを加味しても\emph{平均的な}実行時間にはほぼ影響しない。
+より正確に言うと、空のデータ構造から始めて、#add(i,x)#と#remove(i)#を#m#回実行するとき、backing arrayを拡大、縮小するのにかかる時間の合計は$O(m)$である。
+コストが大きい操作もあるが、#m#個の操作にわたって均せば、1つの操作あたりの償却コストは$O(1)$なのだ。
+
+\cpponly{
+この章、そしてこの本では、要素数を保持する配列が使えると便利なことが多い。
+C++のふつうの配列は要素数を保持していないので、要素数を保持する配列のクラス#array#を定義する
+\footnote{訳注：この#array#クラスにおける$=$の実装では、右辺の配列を#NULL#にしている。つまり、他の#array#に代入した#array#は、その後使えなくなってしまうことに注意する。}。
+このクラスは標準的なC++の配列#a#と整数#length#により簡単に実装できる。}
+\cppimport{ods/array.a.length}
+\cpponly{
+#array#の大きさは作成時に指定する。
+}
+\cppimport{ods/array.array(len)}
+\cpponly{配列の要素は添字により指定できる。}
+\cppimport{ods/array.operator[]}
+\cpponly{また、ある配列を他の配列に割り当てる操作は、ポインタの操作により定数時間で実行できる。}
+% XXX: このarray.operator=の実装は怪しい -- https://github.com/patmorin/ods/pull/68 でツッコミが入っているが、Pat はいまの実装を選んでいるので、訳注を入れるに留めることにした
+\cppimport{ods/array.operator=}
+
+\section{#ArrayStack#：配列を使った高速なスタック操作}
+\seclabel{arraystack}
+
+\index{ArrayStack@#ArrayStack#}%
+
+#ArrayStack#は、\emph{backing array}を使った#List#インターフェースの実装だ。
+以降では、#ArrayStack#の実装に利用するbacking arrayを配列#a#と呼ぶ。
+リストの#i#番めの要素は、#a[i]#に格納する。
+配列#a#の大きさは、通常は厳密に必要な要素数より大きいので、
+実際に#a#に入っているリストの要素数は整数#n#で表す。
+つまり、リストの要素は#a[0]#,\ldots,#a[n-1]#に格納されている。
+このとき常に$#a.length# \ge #n#$である。
+
+\codeimport{ods/ArrayStack.a.n.size()}
+
+\subsection{基本}
+#get(i)#や#set(i,x)#を使って#ArrayStack#の要素を読み書きする方法は簡単だ。
+必要に応じて境界チェック\footnote{訳注：#get(i)#や#set(i,x)#における境界チェック（bounds-checking）とは、添字#i#が、最初の要素の添字である0以上であり、かつ、最後の要素の添字以下である、つまり#a.length - 1#以下であると確認することである。% 境界チェックを行なうとエラーは防げるが遅くなる。<- 知ってる人には冗長だし、知らない人は混乱しそうなので消しました。
+}をしたあと、単に#a[i]#を返すか、#a[i]#を書き換えるかすればよい。
+% 少なくともC++ではStroustrup教授が[]演算子については授業で言ってた
+
+\codeimport{ods/ArrayStack.get(i).set(i,x)}
+
+#ArrayStack#に要素を追加、削除するための実装を\figref{arraystack}に示す。
+#add(i,x)#では、まず#a#がすでに一杯かどうかを調べる。
+もしそうなら#resize()#を呼び出して#a#を大きくする。
+#resize()#の実装方法は後述する。
+いまのところ、#resize()#の直後には$#a.length# > #n#$となっている点だけ了解しておけばよい。
+あとは、#x#を入れるために$#a[i]#,\ldots,#a[n-1]#$を1つずつ右に移動させ、#a[i]#を#x#にして、#n#を1増やす。
+
+\begin{figure}
+  \begin{center}
+    \includegraphics[scale=0.90909]{figs/arraystack}
+  \end{center}
+  \caption{#ArrayStack#に対する#add(i,x)#と#remove(i)#の実行例。矢印は要素のコピーを表す。#resize()#を呼ぶ操作にはアスタリスクを付した}
+  \figlabel{arraystack}
+\end{figure}
+
+% XXX: add はバグっているのではないか。n==a.length でも resize の必要があるのではないか -- コードを修正しました
+\codeimport{ods/ArrayStack.add(i,x)}
+#resize()#のコストを無視すれば、#add(i, x)#のコストは#x#を入れる場所を作るためにシフトする要素数に比例する。つまり、この操作の（#resize()#のコストを無視した）実行時間は、$O(#n#-#i#)$である。
+
+#remove(i)#も同様に実装できる。
+$#a[i+1]#,\ldots,#a[n-1]#$を左に1つシフトし、#n#の値を1つ小さくする（#a[i]#は書き換えられる前に控えておく）。
+そして、配列の長さに対して要素数が少なすぎないか、具体的には$#a.length# \ge 3#n#$かどうかを確認する。
+もしそうなら#resize()#を呼んで#a#を小さくする。
+
+\codeimport{ods/ArrayStack.remove(i)}
+#resize()#が呼ばれるかもしれないが、そのコストを無視すれば、#remove(i)#のコストはシフトする要素数に比例し、$O(#n#-#i#)$である。
+% TODO サンプルコードが a[n-1]（最終要素）を NULL に書き換えておらず、a[n-2]とa[n-1]がダブっている！どうコードを書き換えるべき？ <- いますぐStroustrup先生から宗旨変えして各操作に境界値チェックをつけよう！
+
+\subsection{拡張と収縮}
+
+#resize()#の実装は単純だ。
+大きさ$2#n#$の新しい配列#b#を割り当て、#n#個の#a#の要素を#b#の先頭の#n#個としてコピーする。そして#a#を#b#に置き換える。
+よって、#resize()#の呼び出し後は$#a.length# = 2#n#$が成り立つ
+\footnote{訳注：\lemref{arraystack-amortized}の証明でも言及されているが、$#n# = 0$かつ$#a.length# = 1$のときに限ってこの式は成り立たないことがある。}。
+
+\codeimport{ods/ArrayStack.resize()}
+
+#resize()#の実際のコストの計算も簡単だ。
+大きさ$2#n#$の配列#b#を割り当て、#n#個の要素をコピーする。
+これには$O(#n#)$の時間がかかる。
+
+前節の実行時間分析では#resize()#のコストを無視していた。この節では\emph{償却解析（amortized analysis）}と呼ばれる手法でこれを解決する。
+この手法は、個々の#add(i, x)#および#remove(i)#における#resize()#のコストを求めるわけではない。
+代わりに、#add(i, x)#と#remove(i)#からなる$m$個の一連の操作の間に呼ばれる#resize()#の実行時間の合計を考える。特に、次の補題を示す。
+% 以上の部分はpdfにしたときに別段落に分けられていたので、原文に沿って一段落にまとめた
+\begin{lem}\lemlabel{arraystack-amortized}
+  空の#ArrayStack#が作られたあと、$m\ge 1$回の#add(i, x)#および#remove(i)#からなる操作の列が順に実行されるとき、#resize()#の実行時間は合計$O(m)$である。
+\end{lem}
+
+\begin{proof}
+#resize()#が呼ばれるとき、その前の#resize()#の呼び出しから#add#および#remove#が実行された回数が$#n#/2-1$回以上であることを後半で示す。
+
+このとき、#resize()#の$i$回めの呼び出しの際の#n#を$#n#_i$、#resize()#の呼び出し回数を$r$とすれば、#add(i,x)#および#remove(i)#の呼び出し回数の合計は次の関係を満たす。
+\[
+  \sum_{i=1}^{r} (#n#_i/2-1) \le m \enspace
+\]
+これを変形すると次の式が得られる。
+\[
+  \sum_{i=1}^{r} #n#_i \le 2m + 2r  \enspace
+\]
+$r \leq m$なので、#resize()#の呼び出しにかかる実行時間の合計は次のようになる。
+\[
+\sum_{i=1}^{r} O(#n#_i) \le O(m+r) = O(m)  \enspace
+\]
+あとは$(i-1)$回めの#resize()#から$i$回めの#resize()#の間に、#add(i,x)#か#remove(i)#が呼ばれる回数の合計が$#n#_i/2 - 1$以上であることを示せばよい。 % XXX 原文は at least ni/2 だったのだが、 これ文脈からして at least ni/2 - 1 では？ <- っぽいですね -- 一応Patに確認する
+
+これは2つの場合に分けて考えられる。
+1つめは、#resize()#が#add(i,x)#の中で呼ばれる場合で、これはbacking arrayが一杯になるとき、つまり$#a.length# = #n#=#n#_i$が成り立つ場合だ。
+この1つ前に行った#resize()#操作について考えよう。その#resize()#の直後、#a#の大きさは#a.length#だが、#a#の要素数は$#a.length#/2=#n#_i/2$以下であった。
+しかし、#a#の要素数はいまでは$#n#_i=#a.length#$なのだから、前の#resize()#から$#n#_i/2$回以上は#add(i,x)#が呼ばれたことがわかる。
+
+もう1つ考えられるのは、#resize()#が#remove(i)#の中で呼ばれる場合で、このとき$#a.length# \ge 3#n#=3#n#_i$である。
+この1つ前、つまり$#i#-1$回めの#resize()#の直後では、#a#の要素数は$#a.length/2#-1$以上であった
+\footnote{この数式における${}-1$は、特別なケースである$#n#=0$かつ$#a.length# = 1$を考慮したものだ。}。
+いま、#a#には$#n#_i\le#a.length#/3$個の要素が入っている。
+よって、直前の#resize()#以降に実行された#remove(i)#の回数の下界は次のように計算できる。
+  \begin{align*}
+      R & \ge #a.length#/2 - 1 - #a.length#/3 \\
+        & = #a.length#/6 - 1 \\
+        & = (#a.length#/3)/2 - 1 \\
+        & \ge #n#_i/2 -1
+  \end{align*}
+いずれの場合も、$(i-1)$から$i$回めの#resize()#の間に#add(i,x)#か#remove(i)#が呼ばれる回数の合計は$#n#_i/2-1$以上である。
+\end{proof}
+
+\subsection{要約}
+
+次の定理は#ArrayStack#の性能について整理したものだ。
+
+\begin{thm}\thmlabel{arraystack}
+  #ArrayStack#は#List#インターフェースを実装する。
+  #resize()#にかかる時間を無視した場合の#ArrayStack#における各操作の実行時間を以下にまとめる。
+  \begin{itemize}
+    \item #get(i)#および#set(i,x)#の実行時間は$O(1)$である
+    \item #add(i,x)#および#remove(i)#の実行時間は$O(1+#n#-#i#)$である
+    %\footnote{訳注：$#n#=#i#=0$のときであってもビッグオー記法で書けるように、1が足されていることに注意。}
+	% XXX: この1は必要なのか？ -- Pat に確認する
+  \end{itemize}
+  空の#ArrayStack#に対して任意の$m$個の#add(i,x)#および#remove(i)#からなる操作の列を実行する。このとき#resize()#にかかる時間の合計は$O(m)$である。
+\end{thm}
+
+#ArrayStack#というデータ構造は、#Stack#インターフェースを実装する効率的な方法である。
+特に、#push(x)#は#add(n,x)#に相当し、#pop()#は#remove(n-1)#に相当する。
+これらいずれの操作の償却実行時間も$O(1)$である。
+
+\section{#FastArrayStack#：最適化された#ArrayStack#}
+% TALK ここでは 「add(i, x)とremove(i)」のように「と（並立助詞）」を使っている一方で、
+% これ以前は「add(i, x)・remove(i)」のように黒丸で並立している。「と」のほうが紛らわしさがないのでは？
+% （・は乗算に見えなくもない） -- 編集で「・」はなしにする予定 -kshikano
+#ArrayStack#で主にやっていることは、（#add(i,x)#と#remove(i)#のために）データをシフトすることと、（#resize()#のために）データをコピーすることである。
+\notpcode{上記の実装では、これに#for#ループを使った。}%
+\pcodeonly{素朴に実装すると、これには#for#ループを使うだろう。}
+しかし実際には、データのシフトやコピーに特化したもっと効率的な機能が使えることが多い。
+C言語には、#memmove(d,s,n)#と#memcpy(d,s,n)#関数がある
+\footnote{訳注：#memmove(d,s,n)#は、移動先（destination）に移動元（source）から#n#バイトをコピーする関数である。#memcpy(d,s,n)#との違いは、移動元と移動先の領域が重なっていてもよいことである。}。
+C++には、#std::copy(a0,a1,b)#アルゴリズムがある。
+Javaには、#System.arraycopy(s,i,d,j,n)#メソッドがある。
+\index{memcpy@#memcpy(d,s,n)#}%
+\index{std::copy@#std::copy(a0,a1,b)#}%
+\index{System.arraycopy@#System.arraycopy(s,i,d,j,n)#}%
+
+\cppimport{ods/FastArrayStack.add(i,x).remove(i).resize()}
+\javaimport{ods/FastArrayStack.add(i,x).remove(i).resize()}
+% XXX: この add もバグっているのではないか。
+% (1) n==a.length でも resize の必要があるのではないか -- 修正しました
+
+これらの関数は最適化されており、#for#ループを使う場合と比べてかなり高速にデータのコピーが可能な機械語の命令を使っている可能性がある。
+これらの関数を使っても漸近的な実行時間は小さくならないが、最適化として試してみる価値はある。
+
+\pcodeonly{C++やJavaの実装では、高速な配列のコピー関数を使うことで、}
+\notpcode{ここで示した\lang{}の実装では、組み込みの\javaonly{#System.arraycopy(s,i,d,j,n)#}\cpponly{#std::copy(a0,a1,b)#}関数の利用により、}
+操作の種類によっては2〜3倍の高速化に繋がる。
+自分の手元の環境でどれくらい速くなるか、ぜひ試してみてほしい。
+
+\section{#ArrayQueue#：配列を使ったキュー}
+\seclabel{arrayqueue}
+
+\index{ArrayQueue@#ArrayQueue#}%
+この節ではFIFO（先入れ先出し）キューを実装するデータ構造#ArrayQueue#を紹介する。
+このデータ構造では、（#add(x)#によって）追加された要素が、同じ順番で（#remove()#によって）削除される。
+
+FIFOキューの実装に#ArrayStack#を使うのは好ましくない。
+これが賢明な選択でないのは、#ArrayStack#では先頭か末尾のいずれかを要素を追加する側に、他方を削除する側に選ばなければならず、
+2つの操作のいずれかがリストの先頭を変更することになるからだ。そうすると、$#i#=0$で#add(i,x)#か#remove(i)#を呼び出すことになり、
+#n#に比例する実行時間がかかってしまうのである。
+
+もし無限長の配列#a#があれば、配列を使った効率的なキューを簡単に実装できるだろう。
+次に削除する要素を追跡するインデックス#j#と、キューの要素数#n#を記録しておけばよい。
+そうすれば、キューの要素は以下の場所に入っていることになる。
+\[ #a[j]#,#a[j+1]#,\ldots,#a[j+n-1]# \]
+まず#j#, #n#を0に初期化する。
+要素を追加するときは、#a[j+n]#に要素を入れて、#n#を1つ増やす。
+要素を削除するときは、#a[j]#から要素を取り出し、#j#を1つ増やして、#n#を1つ減らす。
+
+この方法の明らかな問題点は、無限長の配列が必要なことだ。
+#ArrayQueue#を使うことで、無限長の配列を、有限長の配列#a#と\emph{剰余算術}で模倣できる。
+\index{modular arithmetic}%
+剰余算術というのは、時刻に対して使うような計算だ。
+例えば、10:00に5時間を足すと3:00になる。
+これを形式的に書けば次のようになる。
+\[
+    10 + 5 = 15 \equiv 3 \pmod{12}
+\]
+上の数式の後半は、「12を法として15と3は合同である」と読む。
+$\bmod$は次のような二項演算と考えてもよい。
+\[
+   15 \bmod 12 = 3
+\]
+整数$a$と正整数$m$について、ある整数$k$が存在し$a = km + r$を満たす整数#r# $\in \{0, \ldots, m-1 \}$を$a \bmod m $と書く。
+簡単に言うと、$r$は$a$を$m$で割った余りである。
+\pcodeonly{CやC++、Ruby、Javaなどの多くのプログラミング言語では、mod演算子を\%で表す。} % TODO: YJ In C/C++ modulo is only defined where both a and m are positive integers. Modulo is implementation dependent if a is negative (it killed me a MONTH).
+\notpcode{\javaonly{Java}\cpponly{C++}を含む多くのプログラミング言語では、mod演算子を#%#で表す\footnote{これは第一引数が負の場合について数学におけるmod演算子を正確に実装したものではないので、時として\emph{脳死}したmod演算子と呼ばれることがある。}}。
+
+剰余算術は無限長の配列を模倣するのに便利である。
+$#i#\bmod #a.length#$が常に$0,\ldots,#a.length-1#$の値を取ることを利用して、配列の中にキューの要素をうまく入れられるのだ。
+\[
+#a[j%a.length]#,#a[(j+1)%a.length]#,\ldots,#a[(j+n-1)%a.length]# \enspace
+\]
+ここでは#a#を\emph{循環配列}として使っている。
+\index{circular array}%
+\index{array!circular}%
+配列の添字が$#a.length#-1$を超えると、配列の先頭に戻ってくるわけである。
+
+残りの問題は#ArrayQueue#の要素数が#a#の大きさを超えてはならないことだ。
+
+\codeimport{ods/ArrayQueue.a.j.n}
+
+#ArrayQueue#に対して#add(x)#および#remove()#からなる操作の列を実行する様子を\figref{arrayqueue}に示す。
+#add(x)#の実装では、まず#a#が一杯かどうかを確認し、必要に応じて#resize()#を呼んで#a#の容量を増やす。
+続いて、#x#を#a[(j+n)%a.length]#に入れて、#n#を1つ増やせばよい。
+
+\begin{figure}
+  \begin{center}
+    \includegraphics[scale=0.90909]{figs/arrayqueue}
+  \end{center}
+  \caption{#ArrayQueue#に対する#add(x)#、#remove()#の実行例。矢印は要素のコピーを表す。#resize()#が発生する呼び出しにはアスタリスクを付した}
+  \figlabel{arrayqueue}
+\end{figure}
+
+\codeimport{ods/ArrayQueue.add(x)}
+% XXX: この add もバグっているのではないか。 (1) n==a.length でも resize の必要があるのではないか -- 修正しました
+
+#remove()#の実装では、まず#a[j]#をあとで返せるように保存しておく。
+続いて#n#を1減らし、$#j#=(#j#+1)\bmod #a.length#$とすることで#j#を1増やす（#a.length#を法として計算している）。
+最後に保存しておいた#a[j]#を返す。
+もし必要なら#resize()#を読んで#a#を小さくする。
+
+\codeimport{ods/ArrayQueue.remove()}
+
+#resize()#操作は#ArrayStack#の#resize()#とよく似ている。
+大きさ$2#n#$の新しい配列#b#を割り当て、
+\[
+   #a[j]#,#a[(j+1)%a.length]#,\ldots,#a[(j+n-1)%a.length]#
+\]
+を
+\[
+   #b[0]#,#b[1]#,\ldots,#b[n-1]#
+\]
+にコピーし、$#j#=0$とする。
+
+\codeimport{ods/ArrayQueue.resize()}
+\subsection{要約}
+
+次の定理は#ArrayQueue#の性能について整理したものだ。
+
+\begin{thm}
+  #ArrayQueue#は、（FIFOの）#Queue#インターフェースの実装である。
+  #resize()#のコストを無視すると、#ArrayQueue#は#add(x)#、#remove()#の実行時間は$O(1)$である。
+  さらに、空の#ArrayQueue#に対して長さ#m#の任意の#add(x)#および#remove()#からなる操作の列を実行するとき、#resize()#にかかる時間の合計は$O(m)$である。
+  % caprice removed i from add(i, x) and remove(i) so that the function signatures match the add(x) and remove() function signatures in the above c++ code
+\end{thm}
+
+\section{#ArrayDeque#：配列を使った高速な双方向キュー}
+\seclabel{arraydeque}
+
+\index{ArrayDeque@#ArrayDeque#}%
+前節の#ArrayQueue#は、一方の端からは追加だけを、他方の端からは削除だけを効率的に実行できるような列を表すデータ構造であった。
+この節で紹介する#ArrayDeque#は、両端に対して追加と削除が効率的に実行できるデータ構造である。
+このデータ構造により、#ArrayQueue#を実装するのに使ったのと同じく、循環配列を使って#List#インターフェースを実装する
+\footnote{訳注：\secref{listintro}で言及したように、#ArrayDeque#は#List#インターフェースを実装するデータ構造である。#ArrayDeque#という名称は、#Deque#インターフェースのすべての操作の実行時間が$O(1)$であることを強調するために付けられている。}。
+\codeimport{ods/ArrayDeque.a.j.n}
+
+#ArrayDeque#に対する#get(i)#と#set(i,x)#は簡単だ。
+配列の要素$#a[#{}#(j+i)#\bmod #a.length#{}#]#$を読み書きすればよい。
+
+\codeimport{ods/ArrayDeque.get(i).set(i,x)}
+
+#add(i,x)#の実装には工夫が必要になる。
+まず#a#が一杯かどうかを確認し、必要に応じて#resize()#を呼ぶ。
+いま、#add(i,x)#操作については、#i#が小さいとき（0に近いとき）と#i#が大きいとき（#n#に近いとき）に特に効率が良くなるようにしたい。
+そこで、$#i#<#n#/2$かどうかを確認する。
+% XXX: 原文の配列の添字がでたらめなので書き換えた
+もしそうなら、左から$#i#$個の要素をいずれも1つずつ左にずらす。
+そうでないなら、右から$#n#-#i#$個の要素をいずれも1つずつ右にずらす。
+#ArrayDeque#に対する#add(i,x)#と#remove(x)#を\figref{arraydeque}に示す。
+% TODO YJ 以下の図、コメント部分の端が切れてる
+\begin{figure}
+  \begin{center}
+    % XXX: 最後の`add(4,z)`は、`add(3,z)`の間違いっぽい -- 修正した
+    \includegraphics[scale=0.90909]{figs/arraydeque}
+  \end{center}
+  \caption{#ArrayDeque#に対する#add(i, x)#、#remove(i)#の実行例。矢印は要素のコピーを表す}
+  \figlabel{arraydeque}
+\end{figure}
+
+\codeimport{ods/ArrayDeque.add(i,x)}
+% XXX: ソースコードのコメントが正しくない気がする -- 抽象的なバッファの話をしているようだが、a を配列を表す変数としても使っているので紛らわしい
+% XXX: この add もバグっているのではないか。 % (1) n==a.length でも resize の必要があるのではないか -- 修正しました
+
+このように要素をずらせば、#add(i,x)#によって移動する要素の数が高々$\min\{#i#, #n#-#i#\}$個に保証される。
+そのため、#add(i,x)#の実行時間は、#resize()#を無視すれば$O(1+\min\{#i#,#n#-#i#\})$である。
+% XXX: O記法は何変数のつもりか。1+は必要なのか -- Pat に相談する
+
+#remove(i)#も同様に実装できる。
+% XXX: 原文の配列の添字がでたらめなので書き換えた -- 前後のコメント参照
+$#i#<#n#/2$かどうかに応じて、左から$#i#$個の要素をいずれも1つずつ右にシフトするか、右から$#n#-#i#-1$個の要素をいずれも1つずつ左にシフトする。
+#remove(i)#の実行時間も、やはり$O(1+\min\{#i#,#n#-#i#\})$である。
+% XXX: O記法は何変数のつもりか。1+は必要なのか -- Pat に相談する
+
+\codeimport{ods/ArrayDeque.remove(i)}
+% XXX: ソースコードのコメントが正しくない気がする -- 抽象的なバッファの話をしているようだが、a を配列を表す変数としても使っているので紛らわしい
+
+\subsection{要約}
+
+次の定理は#ArrayDeque#の性能について整理したものだ。
+\begin{thm}\thmlabel{arraydeque}
+  #ArrayDeque#は#List#インターフェースを実装する。
+  #resize()#のコストを無視すると、#ArrayDeque#における各操作の実行時間は下記のようになる。
+  \begin{itemize}
+    \item #get(i)#および#set(i,x)#の実行時間は$O(1)$である
+    \item #add(i,x)#および#remove(i)#の実行時間は$O(1+\min\{#i#,#n#-#i#\})$である
+  \footnote{訳注：これらの結果から、#ArrayDeque#が確かに#Deque#インターフェースのすべての操作を$O(1)$で実現していることを確認できる。つまり、両端に対する#add(i,x)#および#remove(i)#の実行時間は、$O(1)$で済む。}
+  \end{itemize}
+  さらに、任意の#add(i,x)#および#remove(i)#からなる長さ#m#の操作の列を空の#ArrayDeque#に対して実行するとき、#resize()#にかかる時間の合計は$O(m)$である。
+\end{thm}
+
+\section{#DualArrayDeque#：2つのスタックから作った双方向キュー}
+\seclabel{dualarraydeque}
+
+\index{DualArrayDeque@#DualArrayDeque#}%
+
+次は、2つの#ArrayStack#を使うことで#ArrayDeque#に近い性能を実現する、#DualArrayDeque#というデータ構造を紹介する。
+漸近的な性能が#ArrayDeque#より向上するわけではないが、2つのシンプルなデータ構造を組み合わせてより高度なデータ構造を作る例として取り上げる。
+
+#DualArrayDeque#では、リストを表現するのに2つの#ArrayStack#を使う。
+#ArrayStack#に対する操作は、終端付近の要素に対して高速だったことを思い出してほしい。
+両端の要素に対する操作を高速にするため、#DualArrayDeque#では#front#と#back#という名前の2つの#ArrayStack#を背中合わせに配置する。
+
+\codeimport{ods/DualArrayDeque.front.back}
+
+#DualArrayDeque#では、要素数#n#を明示的に保持しない。
+要素数は$#n#=#front.size()# + #back.size()#$により求められるからだ。
+ただし、#DualArrayDeque#の解析に際しては、いままで通り要素数を#n#で表すことにする。
+
+\codeimport{ods/DualArrayDeque.size()}
+
+1つめの#ArrayStack#である#front#には、$0,\ldots,#front.size()#-1$番めの要素を逆順に入れる。
+もう1つの#ArrayStack#である#back#には、$#front.size()#,\ldots,#size()#-1$番めの要素をそのままの順番で入れる。
+あとは、#front#または#back#に対して#get(i)#や#set(i,x)#を適切に呼べば、#get(i)#および#set(i,x)#を$O(1)$の時間で実行できる。
+
+\codeimport{ods/DualArrayDeque.get(i).set(i,x)}
+
+#front#には逆順に要素が入っているので、#DualArrayDeque#の$#i#$番め（$#i#<#front.size()#$）は、#front#の$#front.size()#-#i#-1$番めの要素である。
+
+#DualArrayDeque#に対する要素の追加と削除については、\figref{dualarraydeque}を見てほしい。
+#add(i,x)#により、#front#または#back#のいずれか適切なほうが操作される。
+
+\begin{figure}
+  \begin{center}
+    \includegraphics[scale=0.90909]{figs/dualarraydeque}
+  \end{center}
+  \caption{#DualArrayDeque#に対する#add(i,x)#および#remove(i)#の実行例。矢印は要素のコピーを表す。#balance()#の発生する呼び出しにはアスタリスクを付した}
+  \figlabel{dualarraydeque}
+\end{figure}
+
+\codeimport{ods/DualArrayDeque.add(i,x)}
+
+#add(i,x)#では、#front#と#back#の要素数を均すために#balance()#を呼び出す。
+#balance()#の実装は後述する。いまのところは、#balance()#のおかげで#front.size()#と#back.size()#の差が三倍より大きくなることはないと理解しておけばよい（$#size()#<2$の場合を除く）。
+具体的には、#balance()#により、$3\cdot#front.size()# \ge #back.size()#$かつ$3\cdot#back.size()# \ge #front.size()#$であることが保証される。
+
+では、#balance()#のコストを無視した#add(i,x)#の実行時間を求めよう。
+$#i#<#front.size()#$のときは、#add(i,x)#により$#front.add(front.size()-i,x)#$が実行されるだけである。
+#front#は#ArrayStack#なので、この実行時間は次のようになる。
+\begin{equation}
+  % XXX: O記法はf(i)の定義域が有限の場合にも定義されているのか？
+  O(#front.size()#-(#front.size()#-#i#)+1) = O(1+#i#) \enspace
+  \eqlabel{das-front}
+\end{equation}
+一方、$#i#\ge#front.size()#$のときには、#add(i,x)#により$#back.add(i-front.size(),x)#$が実行されるだけである。
+このときの実行時間は次のようになる。
+\begin{equation}
+  O(#back.size()#-(#i#-#front.size()#)+1) = O(1+#n#-#i#) \enspace
+  \eqlabel{das-back}
+\end{equation}
+$#i#<#n#/4$のときは、1つめのケース\myeqref{das-front}に該当する。
+$#i#\ge 3#n#/4$のときは、2つめのケース\myeqref{das-back}に該当する
+\footnote{訳注：例えば、$i=0$かつ$n=0$の場合は\myeqref{das-back}に該当する。}。
+$#n#/4\le#i#<3#n#/4$のときは、#front#と#back#のどちらが操作されるかわからない。
+しかし、いずれの場合も高々#n#個の要素をずらして新たな要素を配列に入れるので、実行時間は$O(#n#)$である。
+% しかし$#i#\ge #n#/4$かつ$#n#-#i#>#n#/4$なので、いずれの場合も実行時間は$O(#n#)=O(#i#)=O(#n#-#i#)$である。
+% TALK O(n)=O(i)=O(n-i) って O(n)=O(i+1)=O(n-i+1)と書いたほうがわかり易くないか？
+% せっかく (2.1)がfrontの場合、(2.2)がbackの場合と言っているのだから、
+% 変に１を抜くより参照を明確にしたほうが読みやすいと思うのだが
+%  spinute から caprice: 言いたいことは i>=n/4 and n-i>n/4 ならば O(n) だとすると、直接そういえばいいじゃんと思ったので手を入れました。（あと一変数っぽいO記法と二変数のO記法を等号で繋ぐの怖い）
+以上をまとめると次のようになる。
+% TODO caprice から YJ これ「実行時間」に直したいけど数式に日本語入れるとバグるんだっけ？保留 -- 日本語いれても問題ないので入れました -kshikano
+\[
+    #add(i,x)# \mbox{の実行時間}\le
+          \left\{\begin{array}{ll}
+            O(1+#i#) & \mbox{if $#i#< #n#/4$} \\
+            O(#n#) & \mbox{if $#n#/4 \le #i# < 3#n#/4$} \\
+            O(1+#n#-#i#) & \mbox{if $#i# \ge 3#n#/4$}
+          \end{array}\right . % YJ: 数式の最後の点はlatexのコンパイルのためのものなので必要
+\]
+ゆえに、#add(i,x)#の実行時間は、#balance()#のコストを無視すれば$O(1+\min\{#i#, #n#-#i#\})$である。
+
+#remove(i)#についても、#add(i,x)#と同様に実行時間を解析できる。
+
+\codeimport{ods/DualArrayDeque.remove(i)}
+
+\subsection{バランスの調整}
+
+最後に、#add(i,x)#と#remove(i)#の操作において実行される#balance()#について説明する。
+この#balance()#操作により、#front#と#back#の要素数が極端に偏らないことが保証される。
+具体的には、要素数が2以上のとき、#front#も#back#も$#n#/4$以上の要素を含むようにする。
+#front#か#back#に$#n#/4$以上の要素が含まれそうな場合は、要素を動かして、#front#と#back#にそれぞれちょうど$\lfloor#n#/2\rfloor$個および$\lceil#n#/2\rceil$個の要素が含まれるようにする。
+
+\codeimport{ods/DualArrayDeque.balance()}
+
+#balance()#の実行時間は簡単に解析できる。
+#balance()#によってバランスが調整されるときは、$O(#n#)$個の要素が動かされるので、実行時間は$O(#n#)$である。
+これは一見すると都合が悪い。#balance()#は#add(i,x)#および#remove(i)#のたびに実行されるからだ。
+しかし次の補題により、#balance()#の実行時間は平均的には定数であることがわかる。
+
+\begin{lem}\lemlabel{dualarraydeque-amortized}
+  空の#DualArrayDeque#に対して、#add(i,x)#および#remove(i)#からなる長さ#m#の任意の操作の列を実行する。
+  このとき#resize()#にかかる時間の合計は$O(#m#)$である。
+\end{lem}
+
+\begin{proof}
+  #balance()#によって要素が動かされてから、次に#balance()#によって要素が動かされるまでに、#add(i,x)#および#remove(i)#が実行される回数が$#n#/2-1$以上であることを示す。
+  \lemref{arraystack-amortized}の証明と同様に、これを示せば#balance()#の合計実行時間が$O(#m#)$であることを示したことになる。
+
+  ここでは
+  \emph{ポテンシャル法（potential method）}
+  \index{potential}%
+  \index{potential method}%
+  という技法を使う。
+  #DualArrayDeque#の\emph{ポテンシャル} $\Phi$を、#front#と#back#の要素数の差と定義する。
+  \[  \Phi = |#front.size()# - #back.size()#| \enspace \]
+  #add(i,x)#および#remove(i)#の処理でバランスを調整しない場合、ポテンシャル$\Phi$の増加が高々1であることに注目しよう。 % TODO caprice もっと自然に訳出したい
+
+  次の式が成り立つので、要素を動かす#balance()#を呼び出した直後のポテンシャル$\Phi_0$は1以下である点に注目しよう。
+  \[ \Phi_0 = \left|\lfloor#n#/2\rfloor-\lceil#n#/2\rceil\right|\le 1  \enspace\]
+
+  #balance()#が呼び出されて要素が動く直前の状況について考えよう。このとき、一般性を失うことなく、$3#front.size()# < #back.size()#$であったと仮定できる。
+  この場合、次の式が成り立つ。
+  \begin{eqnarray*}
+   #n# & = & #front.size()#+#back.size()# \\
+       & < & #back.size()#/3+#back.size()# \\
+       & = & \frac{4}{3}#back.size()#
+  \end{eqnarray*}
+  このときのポテンシャル$\Phi_1$は次のように評価できる。
+  \begin{eqnarray*}
+  \Phi_1 & = & #back.size()# - #front.size()# \\
+      &>& #back.size()# - #back.size()#/3 \\
+      &=& \frac{2}{3}#back.size()# \\
+      &>& \frac{2}{3}\times\frac{3}{4}#n# \\
+      &=& #n#/2
+  \end{eqnarray*}
+  以上より、#add(i,x)#および#remove(i)#が呼ばれる回数は、それ以前に#balance()#によって要素が動かされてから$\Phi_1-\Phi_0 > #n#/2-1$以上である。
+\end{proof}
+
+\subsection{要約}
+
+次の定理は#DualArrayDeque#の性質を整理したものだ。
+\begin{thm}\thmlabel{dualarraydeque}
+  #DualArrayDeque#は#List#インターフェースを実装する。
+  #resize()#と#balance()#のコストを無視すると、#DualArrayDeque#における各操作の実行時間は次のようになる。
+  \begin{itemize}
+    \item #get(i)#および#set(i,x)#の実行時間は$O(1)$である
+    \item #add(i,x)#および#remove(i)#の実行時間は$O(1+\min\{#i#,#n#-#i#\})$である
+  \end{itemize}
+  また、空の#DualArrayDeque#に対して長さ#m#の任意の#add(i,x)#および#remove(i)#からなる操作の列を実行するとき、#resize()#にかかる時間の合計は$O(#m#)$である。
+\end{thm}
+
+\section{#RootishArrayStack#：メモリ効率に優れた配列スタック}
+\seclabel{rootisharraystack}
+
+\index{RootishArrayStack@#RootishArrayStack#}%
+
+これまでに紹介したデータ構造には共通の欠点がある。
+データの格納に配列を1つ、もしくは2つしか使っておらず、しかも頻繁なサイズ変更を避けていることから配列に空きがたくさんある状況が多いという点である。
+例えば、#resize()#直後の#ArrayStack#では配列が半分しか埋まっていない。
+3分の1しか埋まっていない状況さえある。
+
+この節では、無駄なスペースが少ない#RootishArrayStack#というデータ構造を紹介する
+\footnote{訳注：#RootishArrayStack#は、前節までのデータ構造と比べると、実際に目にする機会は少ないように思える。そのため、初学者は読み飛ばしてもよい。ただし課題設定と設計アイデアは興味深い。}。
+#RootishArrayStack#では、#n#個の要素を$O(\sqrt{#n#})$個の配列に入れる。
+各配列は、常に$O(\sqrt{#n#})$箇所以下しか空いていない。 % TODO: YJ 配列のlocation = 場所?
+残りのすべての場所にはデータが入っているのだ。
+つまり、#n#個の要素を入れるときに無駄になるスペースは$O(\sqrt{#n#})$以下である。
+
+#RootishArrayStack#では\emph{ブロック}と呼ぶ#r#個の配列に要素を入れる。これらの配列には$0,1,\ldots,#r#-1$と番号を付ける。
+\figref{rootisharraystack}を見てほしい。
+$#b#$番めのブロックには$#b#+1$個の要素を入れる。
+すなわち、#r#個のブロックに含まれる要素数の合計は次のように計算できる。
+\[
+  1+ 2+ 3+\cdots +#r# = #r#(#r#+1)/2
+\]
+この等式が成り立つことは\figref{gauss}を見ればわかるだろう。
+
+\begin{figure}
+  \begin{center}
+    \includegraphics[width=\ScaleIfNeeded]{figs/rootisharraystack}
+  \end{center}
+  \caption{#RootishArrayStack#に対する#add(i,x)#および#remove(i)#の実行例。矢印は要素のコピーを表す}
+  \figlabel{rootisharraystack}
+\end{figure}
+
+\codeimport{ods/RootishArrayStack.blocks.n}
+
+\begin{figure}
+  \begin{center}
+    \includegraphics[scale=0.90909]{figs/gauss}
+  \end{center}
+  \caption{白い正方形の数は合わせて$1+2+3+\cdots+#r#$である。斜線を引いた正方形の数も同じである。白い正方形と斜線を引いた正方形を合わせてできる正方形全体は、$#r#(#r#+1)$個の正方形からなる}
+  \figlabel{gauss}
+\end{figure}
+
+リストの要素はブロックに順番に入れる。
+リストの0番めの要素はブロック0に、1番めと2番めの要素はブロック1に、3番めと4番めと5番めの要素はブロック2に格納する。
+リスト全体で見たときに#i#番めの要素がどのブロックのどの位置に入っているか、どうすればわかるだろうか？
+
+#i#番めの要素がどのブロックに入っているかさえわかれば、ブロック内での位置は簡単に計算できる。 % YJ 日本語にすると曖昧なので追記
+#i#番めの要素が#b#番めのブロックに入っているなら、$0,\ldots,#b#-1$番めの各ブロックにおける要素数の合計は$#b#(#b#+1)/2$である。
+そのため、#i#番めの要素は、#b#番めのブロックにおいて下記のように計算できる#j#番めの位置に入っている\footnote{訳注：例えば、$#b#=2$かつ$#i#=3$のとき、$#j#=3-3=0$となり、#i#に対応するのは2番めのブロックの0番めの要素である。}。
+\[
+     #j# = #i# - #b#(#b#+1)/2
+\]
+#i#から#b#を求める、つまり#i#番めの要素がどのブロックに入っているのかを計算する方法はもう少しややこしい。
+#i#以下のインデックスを持つ要素は$#i#+1$個ある。
+一方、$0,\ldots,#b#$番めのブロックに入っている要素数の合計は$(#b#+1)(#b#+2)/2$である。
+よって、#b#は次の式を満たす最小の整数である。
+\[
+    (#b#+1)(#b#+2)/2 \ge #i#+1 \enspace
+\]
+この式は次のように変形できる。
+\[
+    #b#^2 + 3#b# - 2#i# \ge  0 \enspace
+\]
+二次方程式$#b#^2 + 3#b# - 2#i# =  0$は、2つの解$#b#=(-3 + \sqrt{9+8#i#}) / 2$と$#b#=(-3 - \sqrt{9+8#i#}) / 2$を持つ。
+2つめの解は常に負の値なので捨ててよい。
+よって、解は$#b# = (-3 + \sqrt{9+8#i#}) / 2$である。
+この解は一般に整数とは限らない。
+とはいえ、元の不等式に立ち戻って考えれば、欲しかったのは$#b# \ge (-3 + \sqrt{9+8i}) / 2$を満たす最小の#b#である。
+これは次のように書ける。
+\[
+   #b# = \left\lceil(-3 + \sqrt{9+8i}) / 2\right\rceil \enspace
+\]
+
+\codeimport{ods/RootishArrayStack.i2b(i)}
+% TODO caprice 天井関数についての訳注をcode内に -- code内に訳注はいれないほうがよいです（入れることはできなくはないですが） -kshikano
+% with this out of the way は「これを片付けたことを踏まえて」ぐらいか？
+インデックス#i#からブロック番号#b#への変換関数#i2b#を用いれば、#get(i)#と#set(i,x)#を実装するのは簡単だ。
+まず#b#を計算し、そのブロック内のインデックス#j#を求め、適切な操作を実行すればよい。
+
+\codeimport{ods/RootishArrayStack.get(i).set(i,x)}
+
+この章に出てくるデータ構造のどれかを使って#blocks#のリストを表現すれば、#get(i)#も#set(i,x)#も実行時間は定数である。
+
+#add(i,x)#については、これまで紹介した他のデータ構造と同じように考えればよい。
+まずデータ構造が一杯かどうか、つまり$#r#(#r#+1)/2 = #n#$かどうかを確認する。
+もしそうなら、新たなブロックを追加するために、#grow()#というメソッドを呼び出す。
+その後、$#i#,\ldots,#n#-1$番めの要素をそれぞれ右に1つずらし、新たな#i#番めの要素を入れるための隙間を作る。
+
+\codeimport{ods/RootishArrayStack.add(i,x)}
+
+#grow()#メソッドにより新しいブロックが追加される。
+
+\codeimport{ods/RootishArrayStack.grow()}
+
+#grow()#のコストを無視すれば、シフト操作の回数を数えることで、#add(i,x)#の実行時間が$O(1+#n#-#i#)$であるとわかる。したがって、#ArrayStack#と同じである。
+
+#remove(i)#も#add(i,x)#と同様だ。
+$#i#+1,\ldots,#n#$番めの要素をそれぞれ左に1つずつシフトし、2つ以上の空のブロックがあれば#shrink()#を呼び出して、使われていないブロックを1つだけ残して削除する。
+
+\codeimport{ods/RootishArrayStack.remove(i)}
+\codeimport{ods/RootishArrayStack.shrink()}
+
+#shrink()#のコストを無視すれば、シフト操作の回数を数えることで、#remove(i)#の実行時間が$O(#n#-#i#)$であるとわかる
+\footnote{訳注：#remove(i)#の場合は常に$#i#<#n#$、すなわち$#n#-#i#>0$が成り立つので、#add(i,x)#の計算量のように1を足す必要がない。}
+。
+
+\subsection{拡張、収縮の分析}
+
+#add(i,x)#と#remove(i)#の解析では#grow()#と#shrink()#を考慮していなかった。
+#ArrayStack.resize()#の場合とは違い、#grow()#と#shrink()#では要素がコピーされないことに注意しよう。
+つまり、#grow()#と#shrink()#は、それぞれ大きさ#r#の配列の割り当ておよび解放をするだけである。
+環境によって、これは定数時間で実行できたり、#r#に比例する時間がかかったりする。
+
+#grow()#と#shrink()#を呼んだ直後の状況はわかりやすい。
+最後のブロックは空で、それ以外のブロックが一杯になっている。
+そのため、次の#grow()#と#shrink()#が呼ばれるのは、少なくとも$#r#-1$回だけ要素が追加および削除されたあとである。
+よって、#grow()#および#shrink()#に$O(#r#)$だけ時間がかかっても、そのコストは$#r#-1$回の#add(i,x)#および#remove(i)#で償却され、#grow()#と#shrink()#の償却コストは$O(1)$である。
+
+\subsection{空間使用量}
+\seclabel{rootishspaceusage}
+
+#RootishArrayStack#が使う無駄な領域の量を解析する。
+#RootishArrayStack#が確保している配列の中で、データが入っていない箇所を数えたい。
+そのような箇所を\emph{無駄な領域}ということにする。
+\index{wasted space}%
+% 原文は「データ」ではなくa list elementだが、このRootish Array Stackの節の最初で[previous data structures] store their dataと呼んでいるので、データと表記したほうが分かりやすいとcapriceは判断した
+
+#remove(i)#があるので、#RootishArrayStack#で空きのあるブロックは高々2つしかないことが保証される。
+よって、#n#個の要素を含む#RootishArrayStack#のブロック数を#r#とすれば、次の関係が成り立つ。 % 用意 allocate?
+\[
+    (#r#-2)(#r#-1)/2 \le #n# \enspace
+\]
+やはり二次方程式の解を考えることで次の式が成り立つ。
+\[
+   #r# \le (3+\sqrt{1+8#n#})/2 = O(\sqrt{#n#}) \enspace
+\]
+末尾の2つのブロックの大きさは#r#と#r-1#なので、これらのブロックによる無駄な領域の量は高々$2#r#-1 = O(\sqrt{#n#})$である。
+もし、これらのブロックを（例えば）#ArrayStack#に入れれば、#r#個のブロックを格納する#List#による無駄な領域の量も$O(#r#)=O(\sqrt{#n#})$である。
+#n#の値など、その他の情報を保持するのに使う領域は、$O(1)$である。
+以上より、#RootishArrayStack#の無駄な領域の量は合計$O(\sqrt{#n#})$である。
+
+% TODO YJ: 例えばstackの長さがk -> k+1に伸びる度に配列をreallocateするとする戦略の方が各操作が終了したあとの空間量は効率的であるが、ここでの主張は「ほんの一瞬でも」必要な空間量である。この戦略だと配列のコピーの一瞬だけk + (k+1)の領域が必要になる。よってこの戦略の空間量はO(n)である。
+%% このTODOはなんだろう。何か補足の説明を書きたいということ？（内容的には後半のはとぽっぽ原理の箇所の説明に包含されている気がする）
+この領域の量が、空から始めて要素を1つずつ追加できるデータ構造のうちで最適であることを示そう。
+厳密には、#n#個の要素を追加する際にはどこかのタイミングで（ほんの一瞬かもしれないが）$\sqrt{#n#}$以上の無駄な領域が生じることを示す。
+
+空のデータ構造に#n#個の要素を1つずつ追加していくとする。
+追加が完了した時点では#n#個のアイテムがすべてデータ構造に格納されており、それが#r#個のブロックに分散している。
+$#r#\ge \sqrt{#n#}$なら、#r#個のブロックを追跡するために#r#個のポインタ（参照）を使うしかない。これらのポインタは無駄な領域である
+\footnote{訳注：例えば、第3章ではこの考えをさらに進めて、#r#=#n#個のブロックを追跡するために#n#個のポインタを用いる連結リストと呼ばれるデータ構造を紹介する。}
+。
+一方で、$#r# < \sqrt{#n#}$なら、鳩の巣原理により大きさ$#n#/#r# > \sqrt{#n#}$以上のブロックが存在する。
+このブロックが初めて割り当てられた瞬間を考える。
+このブロックは、割り当てられたときは空なので、$\sqrt{#n#}$の無駄な領域が生じている。
+以上より、#n#個の要素を挿入するまでのあるタイミングで、データ構造には$\sqrt{#n#}$の無駄な領域が生じる。
+
+\subsection{要約}
+
+次の定理は#RootishArrayStack#について整理したものだ。
+\begin{thm}\thmlabel{rootisharraystack}
+  #RootishArrayStack#は#List#インターフェースを実装する。
+  #grow()#および#shrink()#のコストを無視すると、#RootishArrayStack#における各操作の実行時間は下記のようになる。
+  \begin{itemize}
+    \item #get(i)#および#set(i,x)#の実行時間は$O(1)$である
+    \item #add(i,x)#および#remove(i)#の実行時間は$O(1+#n#-#i#)$である
+  \end{itemize}
+  空の#RootishArrayStack#に対して、#add(i,x)#および#remove(i)#からなる長さ#m#の任意の操作の列を実行するとき、#grow()#および#shrink()#にかかる時間の合計は$O(m)$である。
+
+  要素数#n#の#RootishArrayStack#が使う（ワード単位で測った）空間使用量\footnote{\secref{model}で説明した、どのようにメモリ量を測るかという話を思い出してほしい。}は$#n# +O(\sqrt{#n#})$である。
+\end{thm}
+
+%\notpcode{
+\subsection{平方根の計算方法}
+\index{へいほうこん@平方根}%
+計算モデルは、計算を理論的に調べるための道具である。ここまでは、#w#ビットのワードRAMモデルという計算モデルに基づいて操作の実行時間やデータ構造のメモリ使用量を調べてきた。\secref{model}によれば、ワードRAMモデルの基本的な操作は算術演算、比較、ビット単位の論理演算であり、平方根の算出は含まない。平方根を計算している#RootishArrayStack#は、ワードRAMモデルに適合しないことに気づいた読者がいるかもしれない。%訳注になっていた部分ですが、完全に段落全体を意訳し直しているので、本文にします。 -kshikano
+
+この節では、平方根の算出が効率的に実装できることを示す。具体的には、長さが$O(\sqrt{#n#})$の2つの配列（#sqrttab#と#logtab#）を実行時間$O(\sqrt{#n#})$の前処理で作っておけば、どんな自然数$#x#\in\{0,\ldots,#n#\}$についても定数時間で$\lfloor\sqrt{#x#}\rfloor$が計算できることを示す。
+% TALK これ、原文は integer (整数)になってるけど負を含まないから自然数のほうが良いか？
+
+次の補題は、#x#の平方根の計算を、#x#に関係する値#x'#の平方根の計算に帰着できることを示すものだ。
+
+\begin{lem}\lemlabel{root}
+  2つの数$#x#\ge 1$と$#x'#=#x#-a$について、$0\le a\le\sqrt{#x#}$だと仮定する。このとき、$\sqrt{x'} \ge \sqrt{#x#}-1$である。
+\end{lem}
+
+\begin{proof}
+以下を示せばよい。
+\[
+\sqrt{#x#-\sqrt{#x#}} \ge \sqrt{#x#}-1 \enspace
+\]
+両辺の二乗を取ると、下記のようになる。
+\[
+ #x#-\sqrt{#x#} \ge #x#-2\sqrt{#x#}+1
+\]
+整理すると下記のようになる。
+\[
+ \sqrt{#x#} \ge 1
+\]
+これはどんな$#x#\ge 1$についても成り立つ。
+\end{proof}
+% caprice これめっちゃ頭いいな　こんなん思いつくんかい
+
+あらゆる自然数$#x#\in\{0,\ldots,#n#\}$の平方根について考える前に、少し問題を制約しよう。
+自然数#x#が$2^{#r#} \le #x# < 2^{#r#+1}$を満たす場合、すなわち$\lfloor\log #x#\rfloor=#r#$である場合を考える。このとき自然数#x#は、$#r#+1$ビットの二進表記で表せる
+\footnote{訳注：例えば#r#が2なら、$#x#=5, 6, 7$をそれぞれ3ビットで$#101#, #110#, #111#$と表せる。}。
+#x#と#x'#の関係は\lemref{root}の仮定を満たすので、$\sqrt{#x#}-\sqrt{#x'#} \le 1$が成り立つ。
+ここで、$#x'#=#x# - (#x#\bmod 2^{\lfloor r/2\rfloor})$とおくと、#x'#の下位$\lfloor #r#/2\rfloor$ビットはすべて0である。
+したがって、#x'#が取りうる値としては、$2^{#r#+1-\lfloor #r#/2\rfloor}$通りの可能性が考えられる。
+その可能性は、下記により、$O(\sqrt{#n#})$で抑えられることがわかる\footnote{訳注：左辺に2を掛けると、左辺と中辺に関する不等号が導出できる。中辺と右辺の不等号については、$2^{#r#} \le#x# < 2^{#r#+1}$から導出される$2^{#r#/2} \le \sqrt{#x#}$を用いて得られる。}。% XXX: この辺の訳注はだらだら書きすぎだと思う
+\[
+  2^{#r#+1-\lfloor #r#/2\rfloor} \le 4\cdot2^{#r#/2} \le 4\sqrt{#x#}
+\]
+#x'#として可能性があるのは高々$O(\sqrt{#n#})$通りなので、$\lfloor\sqrt{#x'#}\rfloor$として可能性がある値をすべて格納する配列#sqrttab#を用意することにしよう。
+この配列#sqrttab#の各要素の値は、具体的には下記のようにする。% i=0だと意味がないので1スタートだと思うのですが、配列のインデックスだと思うと0スタートにみえるのは問題ない？ -kshikano
+\[
+   #sqrttab#[i]
+    = \left\lfloor
+       \sqrt{i 2^{\lfloor #r#/2\rfloor}}
+      \right\rfloor \enspace
+\]
+こうすれば、$#x#\in\{i2^{\lfloor r/2\rfloor},\ldots,(i+1)2^{\lfloor r/2\rfloor}-1\}$のそれぞれについて、$\sqrt{#x#}$の値と$#sqrttab#[i]$の値の差がおよそ2より大きくなることはない。
+言い換えれば、配列の各要素$#s#=#sqrttab#[#x##>>#\lfloor #r#/2\rfloor]$
+\footnote{$#x# #>># #n#$は右シフト演算と呼ばれ、#x#を表すビットのそれぞれを#n#ビットずつ右にずらす。算術上は、#x#から$#x#\bmod 2^#n#$を引いた（すなわち、下位#n#ビットをすべて0にした）あとに$2^#n#$で割った場合と同じ効果を持つ。}は、$\lfloor\sqrt{#x#}\rfloor$か、$\lfloor\sqrt{#x#}\rfloor-1$か、
+$\lfloor\sqrt{#x#}\rfloor-2$のいずれかになる。
+$(#s#+1)^2 > #x#$となるまで#s#をインクリメントすることで、#x#の平方根を下に丸めた自然数$\lfloor\sqrt{#x#}\rfloor$の値を特定できる
+\footnote{訳注：平方根はプログラム中で何千回も使いまわされる可能性がある処理だから、空間計算量を少し犠牲にして中間結果を配列#sqrttab#に入れることで、時間計算量を改善しようという算段である。#x'#の数が高々$2^{#r#+1-\lfloor #r#/2\rfloor}$通り（例えば一般的なコンピュータにおける$#r#=32$の場合は10万通り程度）しかなく、$2^{#r#+1-\lfloor #r#/2\rfloor} \le 4\sqrt{#x#}$という結果からビッグオー記法でいえば$O(\sqrt{#n#})$通りしかないのだから、この工夫は実を結ぶ。}。
+% TALK sqrttab[i] is within 2 of root x ってあるけど、$\lfloor\sqrt{#x#}\rfloor-2$の値を取ったときは微妙に2を超えてないか？いまは「およそ2」としたが、どうすべきか？ -- spinute: そうなの？
+% TALK これ、r=64の場合、sqrttabのサイズが約85億と、果てしなく大きくなってしまわないか？そのことに関して注を入れた方がよいのでは？ -- spinute: r=64 の場合には単純にはうまくいかなそう。ここで平方根を扱っているのは Rootish Array Stack のためで、引数は概ねデータ構造の要素数程度。そのため、ふつうは 32 bit あれば足りるはず
+
+\javaimport{ods/FastSqrt.sqrt(x,r)}
+\cppimport{ods/FastSqrt.sqrt(x,r)}
+
+\notpcode{
+ここまでは$#x#\in\{2^{#r#},\ldots,2^{#r#+1}-1\}$の場合についてのみ考えてきた。
+また、#sqrttab#は$#r#=\lfloor\log #x#\rfloor$についてのみ使えるものであった。
+これを一般化するには、$\lfloor\log #n#\rfloor$個の#sqrttab#を$\lfloor\log #x#\rfloor$の各値に対して準備すればよさそうだ。
+各#sqrttab#の大きさは等比数列で、最大のものの大きさは高々$4\sqrt{#n#}$である。
+そのため、すべての#sqrttab#の大きさを合計すると$O(\sqrt{#n#})$である。
+
+しかし、実は#sqrttab#は1つで十分である。
+$#r#=\lfloor\log #n#\rfloor$の場合の#sqrttab#だけがあればよい。
+
+$\log#x#=#r'#<#r#$である#x#については、$2^{#r#-#r'#}$を掛けて\emph{アップグレード}した次の等式を使えばよい。
+\[
+    \sqrt{2^{#r#-#r'#}x} = 2^{(#r#-#r#')/2}\sqrt{#x#} \enspace
+\]
+$2^{#r#-#r#'}x$は$\{2^{#r#},\ldots,2^{#r#+1}-1\}$に含まれるので、上の値は#sqrttab#に入っている。
+% XXX: 2^{30}-1なのはどういう気遣い？ -- Pat に聞きます
+次のコードは、$\{0,\ldots,2^{30}-1\}$に含まれる任意の#x#について、大きさ$2^{16}$の配列#sqrttab#を使って$\lfloor\sqrt{#x#}\rfloor$を計算するものである。
+} % notpcode
+\javaimport{ods/FastSqrt.sqrt(x)}
+\cppimport{ods/FastSqrt.sqrt(x)}
+\notpcode{
+$#r#'=\lfloor\log#x#\rfloor$の計算方法も説明しておく。
+平方根の場合と同様に、大きさ$2^{#r#/2}$の配列#logtab#を使う。
+$\lfloor\log #x#\rfloor$が#x#を二進表記したときに1となる最大の桁の添字であることに気づけば、実装は難しくない。
+すなわち、$#x#>2^{#r#/2}$のとき#x#を$#r#/2$ビットだけ右にシフトし、#logtab#の添字とする。
+次のコードは、$\{0,\ldots,2^{32}-1\}$に含まれる任意の#x#について、大きさ$2^{16}$の配列#logtab#を使って$\lfloor\log #x#\rfloor$を計算するものである。
+} % notpcode
+\javaimport{ods/FastSqrt.log(x)}
+\cppimport{ods/FastSqrt.log(x)}
+\notpcode{
+最後に、#logtab#および#sqrttab#を初期化するコードを掲載しておく。
+} % notpcode
+\javaimport{ods/FastSqrt.inittabs()}
+\cppimport{ods/FastSqrt.inittabs()}
+\notpcode{
+まとめると、ワードRAMでは、$O(\sqrt{n})$の余分なメモリを使って#sqrttab#および#logtab#という配列を作ることで、#i2b(i)#を用いる各操作を定数時間で実行できる。
+この配列は、#n#が2倍または2分の1の大きさになるたびに拡大または縮小してもよい。その場合の実行時間は、#ArrayStack#のときと同様に、#add(i,x)#および#remove(i)#を実行する回数にわたって償却できる。
+} % notpcode
+
+\section{ディスカッションと練習問題}
+
+この章で説明したデータ構造の大半は古くから知られているもので、多くの議論がなされてきた。
+30年以上前の実装さえ見つかる。
+例えば、Knuthによる\cite[Section~2.2.2]{k97v1}で述べられているスタック、キュー、双方向キューの実装は、一般化すればここで説明した#ArrayStack#、#ArrayQueue#、#ArrayDeque#になる。
+
+#RootishArrayStack#について記述し、\secref{rootishspaceusage}で述べた下界$\sqrt{n}$を示した最初の文献は、おそらくBrodnikらによる\cite{bcdms99}である。
+彼らは、この章で説明した方法とは異なる巧妙なブロックサイズの選び方も示しており、このやり方では#i2b(i)#の中で平方根の計算をせずに済む。
+彼らのやり方では、#i#を含むブロックのインデックスが$\lfloor\log (#i#+1)\rfloor$番めとなり、このインデックスは$#i#+1$を二進表記したときの最高位の桁である。
+これはコンピュータアーキテクチャによっては専用の命令があり、効率的に計算できる。
+\javaonly{Javaでは、#Integer#クラスの#numberOfLeadingZeros(i)#メソッドにより、簡単に$\lfloor\log (#i#+1)\rfloor$を計算できる。}
+
+#RootishArrayStack#に関連するデータ構造として、GoodrichとKlossによる\cite{gk99}で示された二段階の\emph{階層ベクトル（tiered-vector）}というものがある。
+\index{tiered-vector}%
+このデータ構造では、#get(i,x)#および#set(i,x)#の実行時間は定数である。
+#add(i,x)#および#remove(i)#の実行時間は$O(\sqrt{#n#})$である。
+% XXX: excrefで参照しているのは問2.9だが、問2.7（おそらく章.節）になっている -- 修正済み
+\excref{rootisharraystack-fast}では、#RootishArrayStack#をさらに改良し、これに近い実行時間を達成する。
+
+\begin{exc}
+  #List#の#addAll(i,c)#操作は、#Collection c#の要素をすべてリストの#i#番めの位置に順に挿入する
+  （#add(i,x)#は$#c#=\{#x#\}$とした特殊な場合である）。
+  この章で説明したデータ構造において、
+  #add(i,x)#を繰り返し実行して#addAll(i,c)#を実装すると効率がよくない理由を説明せよ。
+  また、より効率的な実装を考えて実装せよ。
+\end{exc}
+
+\begin{exc}
+  \emph{#RandomQueue#}を設計、実装せよ。
+  \index{RandomQueue@#RandomQueue#}%
+  #RandomQueue#は#Queue#インターフェースの実装であり、その#remove()#では、そのときにキューに入っている要素から一様な確率で1つを選んで取り出す
+  （カバンに要素を入れておき、中を見ずに適当に要素を取り出すようなものだと考えればよい）。
+
+  ただし、#RandomQueue#における#add(x)#および#remove()#の償却実行時間は定数でなければならないとする。
+\end{exc}
+
+\begin{exc}
+  #Treque#（triple-ended queue）を設計、実装せよ。
+  \index{Treque@#Treque#}%
+  #Treque#は#List#の実装であり、
+  #get(i)#と#set(i,x)#は定数時間で実行できる。
+  #Treque#の#add(i,x)#および#remove(i)#の実行時間は次のように表せる。
+  \[
+     O(1+\min\{#i#, #n#-#i#, |#n#/2-#i#|\}) \enspace
+  \]
+  つまり、#Treque#は、両端あるいは中央に近い位置の修正が高速なデータ構造である。
+\end{exc}
+
+\begin{exc}
+  配列#a#を「回転」する#rotate(a,r)#を実装せよ。
+  すなわち、すべての$#i#\in\{0,\ldots,#a.length#\}$について、#a[i]#を$#a#[(#i#+#r#)\bmod #a.length#]$に動かす操作を実装せよ。
+\end{exc}
+
+\begin{exc}
+  #List#を回転する#rotate(r)#を実装せよ。
+  すなわち、リストの#i#番めの要素を$(#i#+#r#)\bmod #n#$番めに移す操作を実装せよ。
+  ただし、#ArrayDeque#や#DualArrayDeque#に対する#rotate(r)#の実行時間は$O(1+\min\{#r#,#n#-#r#\})$でなければならないとする。
+\end{exc}
+
+\notpcode{
+\begin{exc}
+% TODO: YJ I guess memcpy is not possible in Ruby?
+%   この問は\lang\ 版からは除外されている。
+  #ArrayDeque#を実装せよ。
+  ただし、#add(i,x)#、#remove(i)#、#resize()#におけるシフト処理では高速な#System.arraycopy(s,i,d,j,n)#を利用すること。
+\end{exc}
+}
+
+\begin{exc}
+  #%#演算を用いずに#ArrayDeque#を実装せよ（この演算に時間がかかる環境もある）。
+  #a.length#が2の冪なら次の式が成り立つことを利用してよい。
+  \[  #k%a.length#=#k&(a.length-1)# \enspace
+  \]
+  なお、#&#はビット単位のand演算オペレータである。
+\end{exc}
+
+\begin{exc}
+  剰余演算を一切使わない#ArrayDeque#の実装を考えよ。
+  すべてのデータは配列内の連続した領域に順番に並んでいることを利用してよい。
+  データがこの配列の先頭もしくは末尾の外にはみ出したときは、#rebuild()#操作を実行する。
+  すべての操作の償却実行時間は#ArrayDeque#と同じになるように注意すること。
+
+  \noindent ヒント：#rebuild()#の実装方法がポイントだ。
+  $#n#/2$回以下の操作で、データがどちらの端からもはみ出さない状態に辿り着かなければならない。
+
+  実装したプログラムの性能を、元の#ArrayDeque#と比較せよ。
+  実装を（#System.arraycopy(a,i,b,i,n)#を使って）最適化し、#ArrayDeque#の性能を上回るかどうか確認せよ。
+\end{exc}
+
+\begin{exc}
+  #RootishArrayStack#を修正し、無駄な領域の量は$O(\sqrt{#n#})$だが#add(i,x)#および#remove(i,x)#の実行時間が$O(1+\min\{#i#,#n#-#i#\})$であるデータ構造を設計、実装せよ。
+\end{exc}
+
+\begin{exc}\exclabel{rootisharraystack-fast}
+  #RootishArrayStack#を修正し、無駄な領域の量は$O(\sqrt{#n#})$だが#add(i,x)#および#remove(i,x)#の実行時間が$O(1+\min\{\sqrt{#n#},#n#-#i#\})$であるデータ構造を設計、実装せよ（\secref{selist}が参考になるだろう）。
+\end{exc}
+
+\begin{exc}
+  #RootishArrayStack#を修正し、無駄な領域の量は$O(\sqrt{#n#})$だが#add(i,x)#および#remove(i,x)#の実行時間が$O(1+\min\{#i#,\sqrt{#n#},#n#-#i#\})$であるデータ構造を設計、実装せよ（\secref{selist}が参考になるだろう）。
+\end{exc}
+
+\begin{exc}
+  #CubishArrayStack#を設計、実装せよ。
+  \index{CubishArrayStack@#CubishArrayStack#}%
+  #CubishArrayStack#は#List#インターフェースを実装する三段階のデータ構造であり、無駄な領域の量が$O(#n#^{2/3})$である。
+  #CubishArrayStack#では、#get(i)#および#set(i,x)#が定数時間で実行できる。
+  #add(i,x)#および#remove(i)#の償却実行時間は$O(#n#^{1/3})$である。
+\end{exc}

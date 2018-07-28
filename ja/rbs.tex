@@ -1,0 +1,525 @@
+\chapter{ランダム二分探索木}
+\chaplabel{rbs}
+
+この章では、乱択化を使って各操作について$O(\log #n#)$の実行時間を達成する二分探索木を紹介する。%ランダム化？乱択化？ -kshikano
+
+\section{ランダム二分探索木}
+\seclabel{rbst}
+
+\figref{rbs-lvc}に示した2つの二分探索木を見てほしい。
+これらはいずれも$#n#=15$個のノードからなる。
+左の木はリストであり、右の木は完全にバランスされた二分探索木である。
+左の木の高さは$#n#-1=14$で、右の木の高さは3である。
+
+\begin{figure}
+  \begin{center}
+    \begin{tabular}{cc}
+      \includegraphics[scale=0.90909,scale=0.95]{figs/bst-path} &
+      \includegraphics[scale=0.90909,scale=0.95]{figs/bst-balanced}
+    \end{tabular}
+  \end{center}
+  \caption{$0,\ldots,14$からなる2つの二分探索木}
+  \figlabel{rbs-lvc}
+\end{figure}
+
+この2つの木の構築方法を考えてみよう。
+空の#BinarySearchTree#に対して、次の順で要素を追加すると、左の木になる。
+\[
+    \langle 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14 \rangle
+\]
+逆に、左の木になるような要素の追加順は、この順に限る（#n#についての帰納法で証明できる）。
+一方、次の順で要素を追加すると、右の木になる。
+\[
+    \langle 7,3,11,1,5,9,13,0,2,4,6,8,10,12,14 \rangle
+\]
+右の木は、ほかにも次のような追加順で得られる。
+\[
+    \langle 7,3,1,5,0,2,4,6,11,9,13,8,10,12,14 \rangle\\
+\]
+\[
+    \langle 7,3,1,11,5,0,2,4,6,9,13,8,10,12,14 \rangle
+\]
+実際、右の木が得られるような要素の追加順は、全部で$21,964,800$種類ある。その一方で、左の木が得られるような要素の追加順はたった1つしかない。
+
+% YJ: Anecdotal evidenceは信頼性の低い、事例を元にした証拠という意味。定性的というのは必ずしも信頼性の低さを意味するものではないと思う(定性的だが信頼性の高い証拠も考えられる)。対応する日本語はあまりないがこの場合一番近い日常語は直感的とかだと思う。/ よく使うのは傍証という訳語ですが、ここは現訳のほうがよさそうです（ただ、読みにくいので二文に分けました）。 -kshikano
+この例からは次のようなことがいえるだろう。すなわち、$0,\ldots,14$をランダムな順番で選んで二分探索木に追加すれば、多くの場合は\figref{rbs-lvc}の右に示すようなバランスされた木になり、左に示すような極めて偏った木になることはあまりなさそうである。
+
+この主張は、ランダム二分探索木を考えることで形式的に説明できる。
+まずは大きさ#n#の\emph{ランダム二分探索木（random binary search tree）}の作り方を述べる。
+\ejindex{random binary search tree}{らんだむにぶんたんさくぎ@ランダム二分探索木}%
+\ejindex{binary search tree!random}{にぶんたんさくぎ@二分探索木!ランダム}%
+
+$0,\ldots,#n#-1$のランダムな置換を1つ選ぶ。
+これを$#x#_0,\ldots,#x#_{#n#-1}$とし、この順番に要素を#BinarySearchTree#に追加する。
+ここで、\emph{ランダムな置換（random permutation）}
+\ejindex{permutation!random}{ちかん@置換!らんだむ@ランダム}%
+\ejindex{random permutation}{らんだむなちかん@ランダムな置換}%
+とは、全部で$#n#!$通りある$0,\ldots,#n#-1$の置換はそれぞれ等確率$1/#n#!$で選び出せるので、そのうちの1つを選んだものである。
+
+$0,\ldots,#n#-1$は、#n#個の値であれば何でもよいことに注意してほしい。別の値であってもランダム二分探索木の性質には影響しない。
+$#x#\in\{0,\ldots,#n#-1\}$は、順序が定義された#n#個の要素からなる集合における#x#番めの要素を表しているにすぎない。
+
+ランダム二分探索木の性質を説明する前に、少し脱線して、ランダムな構造を解析する際にしばしば登場する\emph{調和数（harmonic number）}について説明しよう。
+$k$を非負整数とすると、$k$番めの調和数$H_k$は次のように定義される。
+\ejindex{harmonic number}{ちょうわすう@調和数}%
+\index{H@$H_k$ (harmonic number)}%
+\[
+  H_k = 1 + 1/2 + 1/3 + \cdots + 1/k
+\]
+調和数$H_k$は単純な閉じた式では書けないが、自然対数と密接な関係があり、次の式が成り立つ。
+\[
+  \ln k < H_k \le \ln k + 1
+\]
+\newcommand{\hint}{\int_1^k\! (1/x)\, \mathrm{d}x}%
+解析学を学んでいれば、$\hint = \ln k$からこれを示せるだろう。
+積分は、曲線と$x$軸とが囲む領域の面積と解釈できるので、$H_k$の下界は$\hint$、上界は$1+ \hint$である
+（\figref{harmonic-integral}を見れば視覚的に理解できるだろう）。
+
+\begin{figure}
+  \begin{center}
+    \begin{tabular}{cc}
+      \includegraphics[width=\HalfScaleIfNeeded]{figs/harmonic-2}
+        & \includegraphics[width=\HalfScaleIfNeeded]{figs/harmonic-3}
+    \end{tabular}
+  \end{center}
+  \caption{$k$番めの調和数$H_k=\sum_{i=1}^k 1/i$の上界、下界を積分で計算できる。各積分値は図の斜線部の面積であり、$H_k$は長方形の部分の面積である}
+  \figlabel{harmonic-integral}
+\end{figure}
+
+\begin{lem}\lemlabel{rbs}
+大きさ#n#のランダム二分探索木について以下が成り立つ。
+  \begin{enumerate}
+    \item 任意の$#x#\in\{0,\ldots,#n#-1\}$について、#x#を探すときの探索経路の長さの期待値は$H_{#x#+1} + H_{#n#-#x#} - 2$である\footnote{$#x#+1$と$#n#-#x#$は#x#以上の要素の個数、#x#以下の要素の個数と解釈できる。} % 原著では - 2 ではなく - O(1) になっている。しかし、次の小節では#x#の探索経路の長さの期待値は$H_{#x#+1} + H_{#n#-#x#} - 2$であることを証明しており、またこの節の最後の文の根拠としても、ここは - 2 とした方が適切そうである。
+    \item 任意の$#x#\in(-1,n)\setminus\{0,\ldots,#n#-1\}$について、#x#を探すときの探索経路の長さの期待値は$H_{\lceil#x#\rceil} + H_{#n#-\lceil#x#\rceil}$である
+  \end{enumerate}
+\end{lem}
+
+\lemref{rbs}の証明は次項で行う。
+ここでは\lemref{rbs}の意味を考える。
+1つめの主張は、木に含まれる要素を探す場合、木の要素数を#n#とすると、探索経路の長さの期待値は$2\ln #n# + O(1)$以下であるというものだ。
+2つめの主張は、木に含まれない要素を探す場合について、やはり探索経路の長さの期待値に関する評価を与えている。 % YJ removed ambiguousity
+これらを比べると、木に含まれない要素を探すより、含まれる要素を探すほうが少しだけ速いことがわかる。
+
+\subsection{\lemref{rbs}の証明}
+
+\lemref{rbs}の証明では次の考察が鍵となる。
+ランダム二分探索木$T$における値$#x# \in (-1,#n#)$の探索経路に、$i < #x#$を満たす#i#をキーとするノードが含まれる必要十分条件は、$T$を作るランダムな置換において$i$が$\{i+1,i+2,\ldots,\lfloor#x#\rfloor\}$のいずれよりも前に現れることである。
+
+そのことを確認するには、\figref{rbst-records}を見てほしい。
+$\{i,i+1,\ldots,\lfloor#x#\rfloor\}$のいずれかが追加されるまで、探索経路$(i-1,\lfloor#x#\rfloor+1)$に含まれる要素の探索経路は等しい
+（2つの要素の探索経路が別々になるためには、一方以上かつ他方以下の要素がなければならないことを思い出そう）。
+ランダムな置換において最初に現れる$\{i,i+1,\ldots,\lfloor#x#\rfloor\}$の要素を$j$とする。
+$j$は、#x#の探索経路上にずっと存在していることに注意しよう。
+$j\neq i$ならば、$j$を含むノード$#u#_j$は、$i$を含むノード$#u#_i$より先に作られる。
+そのあとで$i$を追加するときは、$i<j$なので、$#u#_j#.left#$を根とする部分木に$#u#_i$が追加される。
+一方、#x#の探索経路は、この部分木を通らない。
+なぜなら、この経路は$#u#_j$を訪問したあと、$#u#_j#.right#$に向かうからである。
+
+\begin{figure}
+  \begin{center}
+    \includegraphics[width=\ScaleIfNeeded]{figs/rbst-records}
+  \end{center}
+  \caption{値$i<#x#$が#x#の探索経路中にあることの必要十分条件は$i$が$\{i,i+1,\ldots,\lfloor#x#\rfloor\}$のうち最初に木に加えられた要素であることである}
+  \figlabel{rbst-records}
+\end{figure}
+
+$i>#x#$の場合も、キー$i$が#x#の探索経路に含まれる必要十分条件は、$T$を作るランダムな置換において、$i$が$\{\lceil#x#\rceil, \lceil#x#\rceil+1,\ldots,i-1\}$のいずれよりも前に現れることである。
+
+$\{0,\ldots,#n#\}$のランダムな置換では、そのうちの一部だけを取り出した部分列$\{i,i+1,\ldots,\lfloor#x#\rfloor\}$および$\{\lceil#x#\rceil, \lceil#x#\rceil+1,\ldots,i-1\}$も、やはりそれぞれ対応する要素からなる列のランダムな置換になっている。
+このとき、$T$を作るランダムな置換において、どちらの部分列でも先頭には各要素が等しい確率で現れる。そのため次の式が得られる。
+\[
+  \Pr\{\mbox{$i$が#x#の探索経路に含まれる}\}
+  = \left\{ \begin{array}{ll}
+     1/(\lfloor#x#\rfloor-i+1) & \mbox{if $i < #x#$} \\
+     1/(i-\lceil#x#\rceil+1) & \mbox{if $i > #x#$}
+     \end{array}\right . \enspace
+\]
+
+以上の考察により、調和数を使った簡単な計算で\lemref{rbs}を証明できる。
+
+\begin{proof}[\lemref{rbs}の証明]
+$I_i$をインジケータ確率変数とする。
+$I_i$の値は、$i$が探索経路に現れるときは1、そうでないときは0である。
+このとき探索経路の長さを次のように計算できる。
+\[
+  \sum_{i\in\{0,\ldots,#n#-1\}\setminus\{#x#\}} I_i
+\]
+よって、$#x#\in\{0,\ldots,#n#-1\}$なら探索経路の長さの期待値は次のように計算できる（\figref{rbst-probs}(a)参照）。
+\begin{align*}
+  \E\left[\sum_{i=0}^{#x#-1} I_i + \sum_{i=#x#+1}^{#n#-1} I_i\right]
+   & =  \sum_{i=0}^{#x#-1} \E\left[I_i\right]
+         + \sum_{i=#x#+1}^{#n#-1} \E\left[I_i\right] \\
+   & = \sum_{i=0}^{#x#-1} 1/(\lfloor#x#\rfloor-i+1)
+         + \sum_{i=#x#+1}^{#n#-1} 1/(i-\lceil#x#\rceil+1) \\
+   & = \sum_{i=0}^{#x#-1} 1/(#x#-i+1)
+         + \sum_{i=#x#+1}^{#n#-1} 1/(i-#x#+1) \\
+   & = \frac{1}{2}+\frac{1}{3}+\cdots+\frac{1}{#x#+1} \\
+   & \quad {} + \frac{1}{2}+\frac{1}{3}+\cdots+\frac{1}{#n#-#x#} \\
+   & = H_{#x#+1} + H_{#n#-#x#} - 2  \enspace .
+\end{align*}
+値$#x#\in(-1,n)\setminus\{0,\ldots,#n#-1\}$の場合も同様である（\figref{rbst-probs}(b)参照）。
+\end{proof}
+
+\begin{figure}
+  \begin{center}
+    \begin{tabular}{@{}c@{}}
+      \includegraphics[width=\ScaleIfNeeded]{figs/rbst-probs-a} \\ (a) \\[2ex]
+      \includegraphics[width=\ScaleIfNeeded]{figs/rbst-probs-b} \\ (b) \\[2ex]
+    \end{tabular}
+  \end{center}
+  \caption{#x#の探索経路に各要素が現れる確率~(a)、#x#が整数のとき~(b)~#x#が整数でないとき}
+  \figlabel{rbst-probs}
+\end{figure}
+
+\subsection{要約}
+
+次の定理はランダム二分探索木の性能をまとめたものだ。
+
+\begin{thm}\thmlabel{rbs}
+ランダム二分探索木の構築にかかる時間は$O(#n#\log #n#)$である。
+ランダム二分探索木における#find(x)#の実行時間の期待値は$O(\log #n#)$である。
+\end{thm}
+
+\thmref{rbs}における期待値は、ランダム二分探索木を作るための置換のランダム性に基づく。つまり、#x#をランダムに選ぶことには依存しておらず、任意の#x#について\thmref{rbs}は成り立つ。
+
+% XXX: Randomized Binary Search Tree と random binary search tree をどう訳し分けるか -- YJ: ランダム化二分探索木？動的ランダム二分探索木？ 原著はこのsecではTreapをRandomized binary search treeの一つとして紹介しているのにかかわらずexerciseのところではMartinezによる変種こそをrandomized binary search treeと呼んで２つを対比している。
+%\section{#Treap#: A Randomized Binary Search Tree}
+\section{#Treap#: 動的ランダム二分探索木の一種}
+\seclabel{treap}
+
+\index{Treap@#Treap#}%
+前節で説明したランダム二分探索木の問題は、動的でないことである。
+すなわち、#SSet#インターフェースの#add(x)#および#remove(x)#をサポートしていない。
+この節では#Treap#というデータ構造を説明する。
+これは、\lemref{rbs}を使って#SSet#インターフェースを実装するデータ構造である
+\footnote{#Treap#の名称は、このデータ構造が二分木\textbf{tr}ee（\secref{binarysearchtree}）であり、ヒープh\textbf{eap}（\chapref{heaps}）でもあることによる。}。
+
+#Treap#のノードは値#x#を持つ。その点で#Treap#は#BinarySearchTree#に似ているが、それに加えて#Treap#のノードは一意な\emph{優先度} #p#を持つ。
+この#p#はランダムに割り当てられる。
+\javaimport{ods/Treap.Node<T>}
+\cppimport{ods/Treap.TreapNode}
+#Treap#のノードは、二分探索木の性質に加えて、次の\emph{ヒープ性（heap property）}も満たす。
+\begin{itemize}
+\item 根でない任意のノード#u#について$#u.parent.p# < #u.p#$が成り立つ
+      \ejindex{heap property}{ひーぷせい@ヒープ性}%
+\end{itemize}
+言い換えると、どのノードの優先度も、そのいずれの子ノードの優先度よりも小さい。
+\figref{treap}に#Treap#の例を示す。
+
+\begin{figure}
+  \begin{center}
+    \includegraphics[width=\ScaleIfNeeded]{figs/treap}
+  \end{center}
+  \caption{整数$0,\ldots,9$を含む#Treap#の例。ノード#u#を表す四角形の内部に$#u.x#,#u.p#$を表示してある}
+  \figlabel{treap}
+\end{figure}
+
+#Treap#の形状は、ヒープ性と二分探索木の性質を共に満たすことから、キー#x#と優先度#p#が決まれば一意に定まる。
+具体的には、ヒープ性から、最小の優先度を持つノードが#Treap#の根#r#になる。
+さらに、二分探索木の性質から、#r.x#より小さなキーを持つノードは#r.left#を根とする部分木に含まれ、#r.x#より大きなキーを持つノードは#r.right#を根とする部分木に含まれる。
+
+#Treap#の優先度の重要な特徴は、値#x#に対して一意であり、かつランダムに割り当てられることだ。
+このことから、#Treap#の解釈には2つの等価なものが考えられる。
+まず、先ほど定義したように、#Treap#はヒープ性と二分探索木の性質を共に満たす木として解釈できる。
+もう1つの解釈は、#Treap#は優先度の昇順にノードが追加される#BinarySearchTree#であるというものである。
+例えば、空の#BinarySearchTree#に対して値$(#x#,#p#)$を次の順で追加すると、\figref{treap}の#Treap#が得られる。
+\[
+  \langle
+   (3,1), (1,6), (0,9), (5,11), (4,14), (9,17), (7,22), (6,42), (8,49), (2,99)
+  \rangle
+\]
+
+#Treap#のノードにおける優先度はランダムに決まる。ということは、キーをランダムに置換して空の#BinarySearchTree#へと順番に追加しても同じことである。
+例えば、上の例は、次のようなキーの置換を#BinarySearchTree#へと順番に追加することに対応する。
+\[
+  \langle 3, 1, 0, 5, 9, 4, 7, 6, 8, 2 \rangle
+\]
+ということは、#Treap#の形状がランダム二分探索木と同様にして決まるということである。
+特に、キー#x#をそのランク
+\footnote{#x#のランクとは、#x#を集合$S$の要素とするとき、$S$の要素のうち#x#より小さいものの個数である。}
+に置き換えれば、\lemref{rbs}を#Treap#にも適用できる。
+\lemref{rbs}を#Treap#に合わせて言い換えると次のようになる。
+\begin{lem}\lemlabel{rbs-treap}
+  #n#個のキーからなる集合$S$を保持する#Treap#について以下が成り立つ。
+  \begin{enumerate}
+    \item 任意の$#x#\in S$について、#x#の探索経路の長さの期待値は$H_{r(#x#)+1} + H_{#n#-r(#x#)} - 2$である
+    \item 任意の$#x#\not\in S$について、#x#の探索経路の長さの期待値は$H_{r(#x#)} + H_{#n#-r(#x#)}$である
+  \end{enumerate}
+  ここで、$r(#x#)$は集合$S\cup\{#x#\}$における#x#のランクである。
+\end{lem}
+\lemref{rbs-treap}についても、期待値は優先度のランダム性に基づくものである。キーのランダム性について何らかの仮定は必要ない。
+
+\lemref{rbs-treap}より、#Treap#の#find(x)#は効率良く実装できる。
+しかし、本当に有用なのは、#add(x)#と#delete(x)#を実装できることだ。
+そのために、木を回転する操作を使ってヒープ性を保つ
+（\figref{rotations}）。
+二分探索木の\emph{回転（rotation）}とは
+\ejindex{rotation}{かいてん@回転}%
+ノード#w#とその親#u#について、二分探索木の性質を保ちながら#w#と#u#の親子関係を逆転する操作である。
+回転には、\emph{右回転（right rotation）}と\emph{左回転（left rotation）}の二種類があり、#w#が#u#の右の子なら右回転を、#w#が#u#の左の子なら左回転を使う。
+\ejindex{left rotation}{ひだりかいてん@左回転}%
+\ejindex{right rotation}{みぎかいてん@右回転}%
+
+\begin{figure}
+  \begin{center}
+     \includegraphics[width=\ScaleIfNeeded]{figs/rotation}
+  \end{center}
+  \caption{二分探索木の左回転と右回転}
+  \figlabel{rotations}
+\end{figure}
+
+実装にあたっては、左回転と右回転の2つの場合を処理し、コーナーケース（#u#が根である場合）にも注意しなければならない。
+そのため、コードは\figref{rotations}から想像されるよりも少し長くなる。
+\codeimport{ods/BinarySearchTree.rotateLeft(u).rotateRight(u)}
+\label{page:rotations}
+なお、#Treap#の回転については、#w#の深さが1減って#u#の深さが1増えるという、重要な性質がある。
+
+回転を使って#add(x)#を次のように実装できる。
+新しいノード#u#を作り、#u.x=x#とし、#u.p#を乱数で初期化する。
+#u#を#BinarySearchTree#の#add(x)#アルゴリズムを使って追加する。
+このとき#u#は#Treap#の葉になる。
+ここで、#Treap#は二分探索木の性質を満たすが、ヒープ性を満たすとは限らない。
+具体的には、#u.parent.p > u.p#の場合、#Treap#はヒープ性を満たさない。
+この場合は#w#=#u.parent#として回転を実行し、#u#を#w#の親にする。
+このとき、まだ#u#がヒープ性を満たさないなら、もう一度回転を実行する。
+そのたびに#u#の深さが1減るので、#u#が根になるか、$#u.parent.p# < #u.p#$を満たしたら、処理を終了する。
+\codeimport{ods/Treap.add(x).bubbleUp(u)}
+\figref{treap-add}に#add(x)#操作の例を示す。
+
+\begin{figure}
+  \begin{center}
+  \includegraphics[width=\ScaleIfNeeded]{figs/treap-insert-a} \\
+  \includegraphics[width=\ScaleIfNeeded]{figs/treap-insert-b} \\
+  \includegraphics[width=\ScaleIfNeeded]{figs/treap-insert-c} \\
+  \end{center}
+  \caption{\figref{treap}の#Treap#に値1.5を追加する}
+  \figlabel{treap-add}
+\end{figure}
+
+#add(x)#操作の実行時間は、#x#の探索経路の長さと、新たに追加されたノード#u#を#Treap#におけるあるべき位置まで移動するための回転の回数から求まる。
+\lemref{rbs-treap}より、探索経路の長さの期待値は$2\ln #n#+O(1)$以下である。
+さらに回転のたびに#u#の深さが減る。
+#u#が根になると処理が終了するので、回転の回数の期待値は探索経路の長さの期待値以下である。
+よって、#Treap#における#add(x)#の実行時間の期待値は$O(\log #n#)$である
+（この操作における回転の回数の期待値が実は$O(1)$であることを\excref{treap-rotates}で見る）。
+%% XXX: \excref{treap-rotates} が問7.3となっているが、問7.5である。（excercise は 7.3 節であるが）-- 対応済み
+
+#Treap#における#remove(x)#は、#add(x)#の逆の操作である。
+#x#を含むノード#u#を探し、#u#が葉にくるまで下方向に回転を繰り返し、最後に#u#を取り外す。
+#u#を下方向に動かすとき、右に回転するか左に回転するかの選択肢があることに注意する。
+この選択は次の規則に従う。
+\begin{enumerate}
+\item #u.left#と#u.right#がいずれも#null#なら、#u#は葉なので回転の必要はない
+\item #u.left#または#u.right#が#null#なら、#null#でないほうと回転して#u#を入れ替える
+\item $#u.left.p# < #u.right.p#$ならば右に回転し、そうでないなら左に回転する
+\end{enumerate}
+この規則のおかげで、#Treap#の連結性とヒープ性が保たれる。
+\codeimport{ods/Treap.remove(x).trickleDown(u)}
+\figref{treap-remove}に#remove(x)#の例を示す。
+\begin{figure}
+  \begin{center}
+  \includegraphics[height=\QuarterHeightScaleIfNeeded]{figs/treap-delete-a} \\
+  \includegraphics[height=\QuarterHeightScaleIfNeeded]{figs/treap-delete-b} \\
+  \includegraphics[height=\QuarterHeightScaleIfNeeded]{figs/treap-delete-c} \\
+  \includegraphics[height=\QuarterHeightScaleIfNeeded]{figs/treap-delete-d}
+  \end{center}
+  \caption{\figref{treap}の#Treap#から値9を削除する}
+  \figlabel{treap-remove}
+\end{figure}
+
+#remove(x)#の実行時間を解析するときは、#add(x)#の逆の操作になっている点に注目する。
+特に、#x#を同じ優先度#u.p#で再挿入することを考えると、#add(x)#操作によりちょうど同じ回数だけ回転が実行されることで#Treap#が#remove(x)#の直前の状態に戻る
+（\figref{treap-remove}を下から上に見ると、値9を#Treap#に追加している状態）。
+これは、大きさ#n#の#Treap#における#remove(x)#操作の実行時間の期待値が、大きさ#n-1#の#Treap#における#add(x)#操作の実行時間の期待値に比例するということである。
+すなわち、#remove(x)#の実行時間の期待値は$O(\log #n#)$である。
+
+\subsection{要約}
+
+次の定理に#Treap#の性能をまとめる。
+
+\begin{thm}
+#Treap#は#SSet#インターフェースを実装する。
+#Treap#は#add(x)#、#remove(x)#、#find(x)#をサポートし、いずれの実行時間の期待値も$O(\log #n#)$である。
+\end{thm}
+
+#Treap#と#SkiplistSSet#を比べてみると面白いだろう。
+いずれも#SSet#の実装で、各操作の実行時間の期待値は$O(\log #n#)$である。
+どちらのデータ構造でも、#add(x)#、#remove(x)#は、検索に続けて定数回のポインタの更新からなる
+（\excref{treap-rotates}参照）。
+%% XXX: \excref{treap-rotates} が問7.3となっているが、問7.5である。（excercise は 7.3 節であるが）-- 対応済み
+よって、どちらのデータ構造でも、探索経路の長さの期待値が性能を決める重要な値である。
+#SkiplistSSet#では、探索経路の長さの期待値は以下のようになる。
+\[
+     2\log #n# + O(1)
+\]
+#Treap#では以下のようになる。
+\[
+    2\ln #n# +O(1) \approx 1.386\log #n#  + O(1)
+\]
+よって、#Treap#における探索経路のほうが短く、各操作についても#Skiplist#より#Treap#のほうがかなり速いと解釈できるだろう。
+% XXX: ここも\excrefの参照先を修正する必要がある -- 対応済み
+\chapref{skiplists}の\excref{skiplist-opt}で示したように、偏ったコイントスを使うことで、#Skiplist#における探索経路の長さの期待値を次のように減らせる。
+%\bf{XXX: SkiplistSSetの誤植?} % 導入では実装+インターフェースの名前であるSkiplistSSetを使い、実装の違いによる計算量の議論に移るところで実装の名前であるSkiplistにしていると思う。
+\[
+     e\ln #n# + O(1) \approx 1.884\log #n# + O(1)
+\]
+この最適化を採用しても、#SkiplistSSet#における探索経路の期待値は、やはり#Treap#のそれよりだいぶ長い。
+
+\section{ディスカッションと練習問題}
+
+ランダム二分探索木についての研究は多岐にわたる。
+Devroye\cite{d88}では、\lemref{rbs}とそれに関連する結果とが証明されている。
+より強い事実もいくつか示されているが、その中で最も印象的なのはReed\cite{r03}の成果である。
+この文献では、ランダム二分探索木の高さの期待値が次の式で表せることが示されている。
+\[
+  \alpha\ln n - \beta\ln\ln n + O(1)
+\]
+ここで$\alpha\approx4.31107$は、$[2,\infty)$範囲での$\alpha\ln((2e/\alpha))=1$の解であり、$\beta=\frac{3}{2\ln(\alpha/2)}$である。
+さらに、高さの分散が一定であることも示されている。
+
+#Treap#という名前はSeidelとAragon\cite{as96}で提案された。
+この文献では、#Treap#といくつかの変種について述べられている。
+ただし、基本的な#Treap#のアイデアはそれ以前にもVuillemin\cite{v80}で研究されている。こちらの文献では、このデータ構造のことをCartesian treeと呼んでいる。
+
+#Treap#のメモリ使用量を最適化する技法として、優先度#p#を各ノードで明示的には保存しないというものがある。
+その代わりに、#u#のメモリアドレスのハッシュ値を#u#の優先度として用いる。
+その際、実用上は多くのハッシュ関数を問題なく利用できるものの、\lemref{rbs}の証明における重要なポイントを成り立たせるためには、ランダム化され、かつ\emph{min-wise independent性}を満たすハッシュ関数を用いる必要がある。
+\ejindex{min-wise independence}{min-wise independenceせい@min-wise independence性}%
+ここで、min-wise independent性とは次の性質である。
+すなわち、相異なる任意の値$x_1,\ldots,x_k$について各ハッシュ値$h(x_1),\ldots,h(x_k)$が高い確率で相異なる値を取ること、
+具体的には、ある定数$c$が存在し、任意の$i\in\{1,\ldots,k\}$について次の式が成り立つことをいう。
+\[
+   \Pr\{h(x_i) = \min\{h(x_1),\ldots,h(x_k)\}\} \le c/k
+\]
+この性質を持つハッシュ関数で実装が簡単、かつ高速なものとしては、
+\emph{tabulation hashing}がある（\secref{tabulation}を参照せよ）。
+\ejindex{tabulation hashing}{tabulation hashing}%
+\ejindex{hashing!tabulation}{はっしゅほう@ハッシュ法!tabulation}%
+
+優先度を各ノードで保持しない#Treap#の変種としては、Mart\'\i nezとRoura \cite{mr98}による動的ランダム二分探索木もある。
+\ejindex{randomized binary search tree}{どうてきらんだむにぶんたんさくぎ@動的ランダム二分探索木}%
+\ejindex{binary search tree!randomized}{にぶんたんさくぎ@二分探索木!どうてきらんだむ@動的ランダム}%
+この変種では、すべてのノード#u#に、#u#を根とする部分木の大きさ#u.size#を持たせる。
+#add(x)#および#remove(x)#のアルゴリズムはいずれも乱択化される。
+#u#を根とする部分木に、#x#を追加するアルゴリズムは、次のようになる。
+\begin{enumerate}
+   \item 確率$1/(#size(u)#+1)$で、#x#を通常通りに葉として追加する。その後、この部分木の根のほうへ#x#を持ち上げるために回転を実行する
+   \item そうでなければ（すなわち確率$1-1/(#size(u)#+1)$で、#x#を#u.left#または#u.right#の適切なほうを根とする部分木に再帰的に追加する
+\end{enumerate}
+上記の1つめの場合は、#Treap#における#add(x)#操作で、#x#のノードが受け取るランダムな優先度のほうが#u#の部分木に含まれる#size(u)#個の優先度のどれよりも小さい場合に相当する。
+1つめの場合が起こる確率も、この場合とまったく同じである。
+
+動的ランダム二分探索木からの値の削除は、#Treap#における削除とよく似ている。
+値#x#を含むノード#u#を見つけ、回転を繰り返して深さを増やし、葉に到達したら木から切り離す。
+各ステップにおける回転が右か左かはランダムに決める。
+\begin{enumerate}
+  \item
+  確率#u.left.size/(u.size-1)#で#u#において右回転を行う。
+  すなわち#u.left#を部分木の根に持ってくる
+  \item
+  確率#u.right.size/(u.size-1)#で#u#において左回転を行う。
+  すなわち#u.right#を部分木の根に持ってくる
+\end{enumerate}
+こちらも、#Treap#における削除のアルゴリズムで#u#の左回転または右回転を実行した確率とまったく等しいことが簡単に確かめられる。
+
+動的ランダム二分探索木には、#Treap#と比べると短所がある。
+要素の追加および削除の際にランダムな選択を多く実行すること、そして、部分木の大きさを保持しなければならないことだ。
+一方、動的ランダム二分探索木には、部分木の大きさを他の目的にも使えるという長所がある。
+例えば、ランクを$O(\log #n#)$の期待実行時間で計算する際に流用できる（\excref{treap-get}参照）。
+#Treap#における優先度には、木のバランスを保つ以外の用途はない。
+
+\begin{exc}
+  \figref{treap}の#Treap#に4.5を優先度7で追加し、続いて値7.5を優先度20で追加する様子を図示せよ。
+\end{exc}
+
+\begin{exc}
+  \figref{treap}の#Treap#から5と7を削除する様子を図示せよ。
+\end{exc}
+
+\begin{exc}
+  \figref{rbs-lvc}の右の木を生成する操作の列が$21,964,800$通りあることを示せ（ヒント：高さ$h$の完全二分木の個数に関する漸化式を作り、$h=3$の場合を評価せよ）。
+\end{exc}
+
+\begin{exc}
+  #permute(a)#メソッドを設計、実装せよ。
+  これは#n#個の相異なる値を含む配列#a#を入力とし、#a#のランダムな置換を返すメソッドである。
+  実行時間は$O(#n#)$であり、$#n#!$通りの置換がいずれも等確率で現れる必要がある。
+\end{exc}
+
+\begin{exc}\exclabel{treap-rotates}
+\lemref{rbs-treap}を利用して、#add(x)#における回転の回数の期待値が$O(1)$であることを示せ（#remove(x)#の場合も同様にわかる）。
+\end{exc}
+
+\begin{exc}
+#Treap#の実装を変更し、明示的に優先度を保持しないようにせよ。
+その際、優先度としては、各ノードのハッシュ値を利用せよ。
+\end{exc}
+
+\begin{exc}
+二分探索木の各ノード#u#が、高さ#u.height#と、#u#を根とする部分木の大きさ#u.size#とを保持していると仮定する。
+  \begin{enumerate}
+    \item 左または右の回転を#u#で実行すると、回転によって影響を受けるすべてのノードにおいて、2つの値をそれぞれ定数時間で更新できることを示せ。
+    \item 各ノードの深さも保持することにすると、上と同様の結果が成り立たなくなることを説明せよ。
+  \end{enumerate}
+\end{exc}
+
+\begin{exc}
+  #n#要素からなる整列済み配列#a#から#Treap#を構築するアルゴリズムを設計、実装せよ。
+  この操作の実行時間は最悪の場合でも$O(#n#)$である必要がある。
+  また、このアルゴリズムで得られる#Treap#は、#a#の要素を順に#add(x)#メソッドで追加して得られる#Treap#と同一でなければならない。
+\end{exc}
+
+\begin{exc}
+  \ejindex{finger}{ゆび@指}%
+  \ejindex{finger search!in a treap}{ゆびたんさく@指探索!treap}%
+  この問題では、#Treap#において与えられたポインタの近くにあるノードを効率的に見つける方法を明らかにする。
+  \begin{enumerate}
+    \item 各ノードで、自身を根とする部分木における最大値と最小値が保持されているような#Treap#を設計、実装せよ。
+    \item 上記で追加した情報を使うことにより、#x#を含むノードからそれほど離れていない#u#を活用して#find(x)#を実行する、#fingerFind(x,u)#という操作を実装せよ。
+	この操作は、#u#から上に向かって進み、$#w.min#\le #x#\le #w.max#$を満たすノード#w#を見つけて、
+	#w#から通常の方法で#x#を検索するというものである
+	（#fingerFind(x,u)#の実行時間は$O(1+\log r)$であることが示せる。
+	ここで$r$は、#x#と#u.x#の間にある#Treap#の要素の数である）。
+	\item #Treap#の実装を拡張し、直近に実行した#find(x)#で見つかったノードから#find(x)#の探索を開始するようにせよ。
+  \end{enumerate}
+\end{exc}
+
+\begin{exc}\exclabel{treap-get}
+#Treap#におけるランクが#i#であるようなキーを返す操作#get(i)#を設計、実装せよ
+（ヒント：各ノード#u#で、#u#を根とする部分木の大きさを保持するようにするとよい）。
+\end{exc}
+
+\begin{exc}
+  \index{TreapList@#TreapList#}
+  #TreapList#を実装せよ。
+  これは#List#インターフェースを#Treap#として実装したものだ。
+  各ノードはリストのアイテムを保持し、行きがけ順で辿るとリストに入っている順でアイテムが見つかる。
+  #List#の操作である#get(i)#、#set(i,x)#、#add(i,x)#、#remove(i)#の期待実行時間はいずれも$O(\log #n#)$である必要がある。
+\end{exc}
+
+
+
+\begin{exc}\exclabel{treap-split}
+  #split(x)#操作をサポートする#Treap#を設計、実装せよ。
+  この操作は、#Treap#に含まれる#x#より大きいすべての値を削除し、削除された値をすべて含む新たな#Treap#を返すものである。
+
+  \noindent 例：
+  #t2 = t.split(x)#は、#t#から#x#より大きい値をすべて削除し、削除した値をすべて含む新たな#Treap#として#t2#を返す。
+  #split(x)#の実行時間の期待値は$O(\log #n#)$である必要がある。
+
+  \noindent 注意：
+  この修正後も#size()#が定数時間で正しく動作するためには\excref{treap-get}の実装が必要である。
+\end{exc}
+
+\begin{exc}\exclabel{treap-join}
+#absorb(t2)#操作をサポートする#Treap#を設計、実装せよ。
+この操作は、#split(x)#の逆の操作とみなせるもので、#t2#という#Treap#からすべての値を削除し、それらをレシーバーに追加する。
+この操作では、#t#の最小値がレシーバーの最大値よりも大きいことを前提とする。
+なお、#absorb(t2)#の期待実行時間は$O(\log #n#)$である必要がある。
+\end{exc}
+
+\begin{exc}
+  この節で紹介したMart\'\i nezの動的ランダム二分探索木を実装せよ。
+  自分の実装の性能を、#Treap#の実装と比較せよ。
+\end{exc}
+
